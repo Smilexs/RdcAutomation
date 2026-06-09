@@ -22,12 +22,12 @@ class CaptureService:
 
     def attach(self, force: bool = False, confirm_vulkan: bool = False) -> str:
         exe = self.mumu.executable()
+        if not confirm_vulkan:
+            raise UserActionRequired("Confirm MuMu12 is configured to use Vulkan before attach.")
         if self.mumu.is_running():
             if not force:
                 raise UserActionRequired("MuMu12 is already running. Close it before attach or rerun with --force.")
             self.mumu.terminate()
-        if not confirm_vulkan:
-            raise UserActionRequired("Confirm MuMu12 is configured to use Vulkan before attach.")
 
         result = self.mcp.call(
             "launch_application",
@@ -74,10 +74,12 @@ class CaptureService:
         session_id = self.config.capture.active_session_id
         if not session_id:
             return
-        self.mcp.call(
-            "close_target",
-            {"session_id": session_id, "terminate_process": terminate_process},
-            timeout=10.0,
-        )
-        self.config.capture.active_session_id = None
-        self.config.capture.active_pid = None
+        try:
+            self.mcp.call(
+                "close_target",
+                {"session_id": session_id, "terminate_process": terminate_process},
+                timeout=10.0,
+            )
+        finally:
+            self.config.capture.active_session_id = None
+            self.config.capture.active_pid = None
