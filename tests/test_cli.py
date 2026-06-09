@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rdc_auto.prompts import choose_option, prompt_path
+from rdc_auto.cli import build_parser
 
 
 def test_package_exposes_version():
@@ -29,3 +30,28 @@ def test_prompt_path_returns_default(monkeypatch, tmp_path):
     monkeypatch.setattr("builtins.input", lambda _: "")
 
     assert prompt_path("Output directory", default=default) == default
+
+
+def test_parser_accepts_short_commands():
+    parser = build_parser()
+
+    assert parser.parse_args(["setup"]).command == "setup"
+    assert parser.parse_args(["attach"]).command == "attach"
+    assert parser.parse_args(["capture"]).command == "capture"
+    assert parser.parse_args(["export"]).command == "export"
+
+
+def test_capture_parser_accepts_out():
+    parser = build_parser()
+    args = parser.parse_args(["capture", "--out", "D:\\Captures"])
+
+    assert args.out == "D:\\Captures"
+
+
+def test_export_parser_accepts_assets_and_out():
+    parser = build_parser()
+    args = parser.parse_args(["export", "D:\\a.rdc", "--assets", "textures", "--out", "D:\\Exports"])
+
+    assert args.rdc_path == "D:\\a.rdc"
+    assert args.assets == "textures"
+    assert args.out == "D:\\Exports"
