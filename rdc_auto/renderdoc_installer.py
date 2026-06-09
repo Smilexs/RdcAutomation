@@ -27,26 +27,63 @@ def parse_v144_windows_x64_url(html: str) -> str:
     raise ValueError("RenderDoc v1.44 Windows x64 installer link was not found")
 
 
+def parse_renderdoc_version(text: str) -> str:
+    match = re.search(r"(?<!\d)v?(\d+)\.(\d+)(?:\.\d+)?", text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return f"{match.group(1)}.{match.group(2)}"
+
+
 class RenderDocInstaller:
     def __init__(
         self,
         config: AppConfig,
         finder: Callable[[], dict[str, str]] = find_renderdoc_install,
         runner: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
+        version_reader: Callable[[dict[str, str]], str] | None = None,
     ):
         self.config = config
         self.finder = finder
         self.runner = runner
+        self.version_reader = version_reader or self._read_installed_version
 
     def ensure_installed(self) -> bool:
         found = self.finder()
         if found.get("qrenderdoc_path"):
+            detected_version = self.version_reader(found)
+            self.config.renderdoc.version = detected_version
+            if detected_version != RENDERDOC_VERSION:
+                self.config.renderdoc.install_dir = ""
+                self.config.renderdoc.qrenderdoc_path = ""
+                self.config.renderdoc.renderdoccmd_path = ""
+                return False
             self.config.renderdoc.version = RENDERDOC_VERSION
             self.config.renderdoc.install_dir = found.get("install_dir", "")
             self.config.renderdoc.qrenderdoc_path = found.get("qrenderdoc_path", "")
             self.config.renderdoc.renderdoccmd_path = found.get("renderdoccmd_path", "")
             return True
         return False
+
+    def _read_installed_version(self, found: dict[str, str]) -> str:
+        for key in ("renderdoccmd_path", "qrenderdoc_path"):
+            exe = found.get(key)
+            if not exe:
+                continue
+            try:
+                result = self.runner(
+                    [exe, "--version"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            output = f"{getattr(result, 'stdout', '')}\n{getattr(result, 'stderr', '')}"
+            version = parse_renderdoc_version(output)
+            if version:
+                return version
+        return ""
 
     def resolve_download_url(self) -> str:
         with urllib.request.urlopen(BUILDS_URL, timeout=30) as response:

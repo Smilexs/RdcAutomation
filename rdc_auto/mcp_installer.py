@@ -16,6 +16,7 @@ class ReleaseAsset:
     name: str
     download_url: str
     digest: str = ""
+    release_tag: str = ""
 
 
 def parse_release_asset(release: dict) -> ReleaseAsset:
@@ -27,6 +28,7 @@ def parse_release_asset(release: dict) -> ReleaseAsset:
                 name=name,
                 download_url=str(asset["browser_download_url"]),
                 digest=str(asset.get("digest", "")),
+                release_tag=str(release.get("tag_name", "")),
             )
     raise ValueError("No RenderDocMCP setup .exe asset was found in the latest release")
 
@@ -60,24 +62,29 @@ class McpInstaller:
         target.parent.mkdir(parents=True, exist_ok=True)
         return urllib.request.urlretrieve(url, target)
 
-    def download_latest_installer(self) -> Path:
+    def latest_release_asset(self) -> ReleaseAsset:
         release = self.fetch_json(self.config.mcp.release_api_url)
-        asset = parse_release_asset(release)
+        return parse_release_asset(release)
+
+    def download_latest_installer(self) -> Path:
+        return self.download_asset(self.latest_release_asset())
+
+    def download_asset(self, asset: ReleaseAsset) -> Path:
         downloads = Path(self.config.mcp.install_dir or app_data_dir() / "mcp") / "downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         target = downloads / asset.name
         self.downloader(asset.download_url, target)
-        self.config.mcp.asset_name = asset.name
-        self.config.mcp.installer_path = str(target)
+        self._record_asset(asset, target)
         return target
 
     def run_installer(self, installer_path: Path) -> None:
         self.runner([str(installer_path)], check=True)
 
-    def discover_executable(self) -> Path | None:
+    def discover_executable(self, allow_configured: bool = True) -> Path | None:
         configured = Path(self.config.mcp.executable_path) if self.config.mcp.executable_path else None
         if configured and configured.is_file():
-            return configured
+            if allow_configured:
+                return configured
 
         candidates = []
         install_dir = Path(self.config.mcp.install_dir) if self.config.mcp.install_dir else app_data_dir() / "mcp"
@@ -95,13 +102,31 @@ class McpInstaller:
                 return candidate
         return None
 
+    def _record_asset(self, asset: ReleaseAsset, installer_path: Path) -> None:
+        self.config.mcp.release_tag = asset.release_tag
+        self.config.mcp.asset_name = asset.name
+        self.config.mcp.asset_digest = asset.digest
+        self.config.mcp.installer_path = str(installer_path)
+
+    def _config_matches_release(self, asset: ReleaseAsset) -> bool:
+        if self.config.mcp.asset_name != asset.name:
+            return False
+        if asset.digest and self.config.mcp.asset_digest != asset.digest:
+            return False
+        if asset.release_tag and self.config.mcp.release_tag != asset.release_tag:
+            return False
+        return True
+
     def ensure_installed(self) -> Path:
-        existing = self.discover_executable()
-        if existing:
+        asset = self.latest_release_asset()
+        existing = self.discover_executable(allow_configured=True)
+        if existing and self._config_matches_release(asset):
             return existing
-        installer = self.download_latest_installer()
+
+        installer = self.download_asset(asset)
         self.run_installer(installer)
-        found = self.discover_executable()
+        found = self.discover_executable(allow_configured=False)
         if not found:
             raise FileNotFoundError("RenderDocMCP installed, but its executable was not found. Set mcp.executable_path in config.json.")
+        self.config.mcp.executable_path = str(found)
         return found

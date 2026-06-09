@@ -68,6 +68,7 @@ def test_attach_terminates_running_mumu_with_force(tmp_path):
     assert mumu.terminated is True
     assert session == "s1"
     assert cfg.capture.active_session_id == "s1"
+    assert cfg.capture.active_session_started_at
     assert mcp.calls[0][0] == "launch_application"
     assert mcp.calls[0][1]["graphics_api"] == "vulkan"
 
@@ -116,3 +117,4 @@ def test_close_clears_active_state_when_mcp_close_fails(tmp_path):
 
     assert cfg.capture.active_session_id is None
     assert cfg.capture.active_pid is None
+    assert cfg.capture.active_session_started_at is None

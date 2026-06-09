@@ -91,6 +91,7 @@ def test_download_latest_installer_records_release_asset(tmp_path):
 
     assert path == tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe"
     assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert cfg.mcp.asset_digest == "sha256:abc123"
     assert cfg.mcp.installer_path == str(path)
 
 
@@ -119,3 +120,73 @@ def test_discover_executable_prefers_configured_path(tmp_path):
     installer = McpInstaller(cfg)
 
     assert installer.discover_executable() == exe
+
+
+def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tmp_path):
+    old_exe = tmp_path / "old" / "RenderDocMCP.exe"
+    old_exe.parent.mkdir()
+    old_exe.write_bytes(b"old")
+    cfg = AppConfig.default()
+    cfg.mcp.install_dir = str(tmp_path / "mcp")
+    cfg.mcp.executable_path = str(old_exe)
+    cfg.mcp.asset_name = "RenderDocMCP-Setup-0.9.0.exe"
+    cfg.mcp.asset_digest = "sha256:old"
+    release = {
+        "assets": [
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+                "digest": "sha256:new",
+            }
+        ]
+    }
+    calls = []
+
+    def downloader(url, target):
+        calls.append(("download", url, target.name))
+        target.write_bytes(b"setup")
+
+    def runner(args, check):
+        calls.append(("run", args[0]))
+        installed = tmp_path / "mcp" / "RenderDocMCP.exe"
+        installed.write_bytes(b"new")
+        return subprocess.CompletedProcess(args, 0)
+
+    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+
+    assert installer.ensure_installed() == tmp_path / "mcp" / "RenderDocMCP.exe"
+    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert cfg.mcp.asset_digest == "sha256:new"
+    assert cfg.mcp.executable_path == str(tmp_path / "mcp" / "RenderDocMCP.exe")
+    assert calls == [
+        ("download", "https://example/RenderDocMCP-Setup-1.0.0.exe", "RenderDocMCP-Setup-1.0.0.exe"),
+        ("run", str(tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe")),
+    ]
+
+
+def test_ensure_installed_accepts_configured_exe_only_when_release_asset_matches(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+    cfg = AppConfig.default()
+    cfg.mcp.executable_path = str(exe)
+    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    cfg.mcp.asset_digest = "sha256:abc123"
+    release = {
+        "assets": [
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+                "digest": "sha256:abc123",
+            }
+        ]
+    }
+
+    def downloader(url, target):
+        raise AssertionError("current release should not be downloaded")
+
+    def runner(args, check):
+        raise AssertionError("current release should not be installed")
+
+    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+
+    assert installer.ensure_installed() == exe

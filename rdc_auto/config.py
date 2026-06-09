@@ -23,7 +23,9 @@ class RenderDocConfig:
 @dataclass
 class McpConfig:
     release_api_url: str = MCP_RELEASE_API_URL
+    release_tag: str = ""
     asset_name: str = ""
+    asset_digest: str = ""
     installer_path: str = ""
     install_dir: str = ""
     executable_path: str = ""
@@ -44,6 +46,7 @@ class CaptureConfig:
     last_rdc_path: str = ""
     active_session_id: str | None = None
     active_pid: int | None = None
+    active_session_started_at: str | None = None
 
 
 @dataclass

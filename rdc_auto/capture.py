@@ -42,6 +42,7 @@ class CaptureService:
         session_id = str(result["session_id"])
         self.config.capture.active_session_id = session_id
         self.config.capture.active_pid = int(result.get("pid", 0) or 0)
+        self.config.capture.active_session_started_at = dt.datetime.now().astimezone().isoformat()
         return session_id
 
     def capture(self, output_dir: str | Path, timeout_seconds: int = 60) -> Path:
@@ -83,3 +84,4 @@ class CaptureService:
         finally:
             self.config.capture.active_session_id = None
             self.config.capture.active_pid = None
+            self.config.capture.active_session_started_at = None

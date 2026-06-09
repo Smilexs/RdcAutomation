@@ -35,3 +35,12 @@ Run these checks on a Windows machine with MuMu12 installed.
 5. Confirm `textures`, `meshes`, `raw_mesh_json`, and `manifest.json` are written.
 6. Confirm PNG files are readable.
 7. Confirm OBJ/MTL files import into a DCC or viewer.
+
+## Negative Checks
+
+1. Temporarily configure or install a RenderDoc version other than v1.44 and confirm `rdc-auto setup` does not accept it as v1.44.
+2. Put a stale or manually built RenderDocMCP executable path in `config.json` and confirm `rdc-auto setup` reinstalls from the latest `RenderDocMCP-Setup-*.exe` release asset.
+3. Start MuMu12 manually, run `rdc-auto attach` without `--force`, and confirm the CLI asks you to close MuMu12 instead of terminating it.
+4. Clear or expire the active session in `config.json`, run `rdc-auto capture`, and confirm the CLI offers to run attach.
+5. Disconnect or stop RenderDocMCP during capture and confirm the CLI reports an actionable timeout or MCP error without an `Unexpected error` prefix.
+6. Use an `.rdc` with at least one texture or mesh export failure and confirm `manifest.json` records the failed asset while other assets continue exporting.

@@ -101,7 +101,6 @@ def test_setup_fails_when_renderdoc_missing_after_install(monkeypatch, capsys):
     monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
     monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
-    monkeypatch.setattr("rdc_auto.cli.find_renderdoc_install", lambda: {"install_dir": "", "qrenderdoc_path": "", "renderdoccmd_path": ""})
     monkeypatch.setattr("rdc_auto.cli.validate_mumu_root", lambda root: Path("D:\\MuMu\\MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"))
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
 
@@ -111,7 +110,16 @@ def test_setup_fails_when_renderdoc_missing_after_install(monkeypatch, capsys):
 
 def test_main_saves_expected_error_config_mutations(monkeypatch):
     cfg = AppConfig.default()
+    cfg.capture.active_session_id = "s1"
     saved_executable_paths = []
+
+    class FakeRenderDocInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            self.config.renderdoc.qrenderdoc_path = "D:\\RenderDoc\\qrenderdoc.exe"
+            return True
 
     class FakeMcpInstaller:
         def __init__(self, config):
@@ -132,8 +140,107 @@ def test_main_saves_expected_error_config_mutations(monkeypatch):
     monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
     monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
     monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: saved_executable_paths.append(config.mcp.executable_path))
+    monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: None)
     monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
 
     assert main(["capture", "--out", "D:\\Captures"]) == 2
     assert saved_executable_paths == ["D:\\RenderDocMCP.exe"]
+
+
+def test_attach_prepares_renderdoc_mcp_and_qrenderdoc_before_launch(monkeypatch):
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = "D:\\MuMu"
+    calls = []
+
+    class FakeRenderDocInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            self.config.renderdoc.qrenderdoc_path = "D:\\RenderDoc\\qrenderdoc.exe"
+            calls.append("renderdoc")
+            return True
+
+    class FakeMcpInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            calls.append("mcp")
+            return Path("D:\\RenderDocMCP.exe")
+
+    class FakeCaptureService:
+        def __init__(self, config, mcp, mumu):
+            self.config = config
+
+        def attach(self, force=False, confirm_vulkan=False):
+            calls.append("attach")
+            return "s1"
+
+    monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+    monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
+    monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
+    monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: calls.append("qrenderdoc"))
+    monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+
+    assert main(["attach", "--yes-vulkan"]) == 0
+    assert calls == ["renderdoc", "mcp", "qrenderdoc", "attach"]
+
+
+def test_capture_prompts_to_attach_when_session_is_missing(monkeypatch, tmp_path):
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = "D:\\MuMu"
+    output_dir = tmp_path / "captures"
+    prompts = []
+
+    class FakeCaptureService:
+        def __init__(self, config, mcp, mumu):
+            self.config = config
+
+        def attach(self, force=False, confirm_vulkan=False):
+            self.config.capture.active_session_id = "s1"
+            return "s1"
+
+        def capture(self, output_dir, timeout_seconds=60):
+            return Path(output_dir) / "frame.rdc"
+
+    def choose(label, options, default=None):
+        prompts.append(label)
+        return "attach" if "active" in label.lower() else "vulkan"
+
+    monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+    monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
+    monkeypatch.setattr("rdc_auto.cli._mcp_client", lambda config: object())
+    monkeypatch.setattr("rdc_auto.cli.choose_option", choose)
+    monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+
+    assert main(["capture", "--out", str(output_dir)]) == 0
+    assert any("active" in prompt.lower() for prompt in prompts)
+
+
+def test_main_reports_expected_file_errors_without_unexpected_prefix(monkeypatch, capsys):
+    cfg = AppConfig.default()
+    cfg.capture.active_session_id = "s1"
+
+    class FakeCaptureService:
+        def __init__(self, config, mcp, mumu):
+            pass
+
+        def capture(self, output_dir, timeout_seconds=60):
+            raise FileNotFoundError("missing dependency")
+
+    monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+    monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
+    monkeypatch.setattr("rdc_auto.cli._mcp_client", lambda config: object())
+    monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+
+    assert main(["capture", "--out", "D:\\Captures"]) == 1
+    err = capsys.readouterr().err
+    assert "missing dependency" in err
+    assert "Unexpected error" not in err

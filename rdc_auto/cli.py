@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from .export_assets import ExportService
 from .log_setup import configure_logging
 from .mcp_client import FileIpcMcpClient
 from .mcp_installer import McpInstaller
-from .paths import find_renderdoc_install, validate_mumu_root
+from .paths import validate_mumu_root
 from .prompts import choose_option, prompt_path
 from .renderdoc_installer import RenderDocInstaller
 
@@ -68,6 +69,16 @@ def main(argv: list[str] | None = None) -> int:
             save_config(cfg)
         print(str(exc), file=sys.stderr)
         return 1
+    except (FileNotFoundError, TimeoutError) as exc:
+        if cfg is not None:
+            save_config(cfg)
+        print(str(exc), file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as exc:
+        if cfg is not None:
+            save_config(cfg)
+        print(f"Command failed with exit code {exc.returncode}: {' '.join(map(str, exc.cmd))}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"Unexpected error: {exc}", file=sys.stderr)
         return 1
@@ -79,12 +90,8 @@ def _cmd_setup(cfg) -> None:
         url = installer.resolve_download_url()
         installer_path = installer.download_installer(url)
         installer.run_installer(installer_path)
-        found = find_renderdoc_install()
-        cfg.renderdoc.install_dir = found.get("install_dir", "")
-        cfg.renderdoc.qrenderdoc_path = found.get("qrenderdoc_path", "")
-        cfg.renderdoc.renderdoccmd_path = found.get("renderdoccmd_path", "")
-        if not cfg.renderdoc.qrenderdoc_path:
-            raise DependencyMissing("RenderDoc installation completed, but qrenderdoc.exe was not found.")
+        if not installer.ensure_installed():
+            raise DependencyMissing("RenderDoc v1.44 installation completed, but qrenderdoc.exe with version 1.44 was not found.")
 
     if not cfg.emulator.root_dir:
         cfg.emulator.root_dir = str(prompt_path("MuMu12 root directory"))
@@ -110,6 +117,12 @@ def _cmd_attach(cfg, force: bool, yes_vulkan: bool) -> None:
 
 
 def _cmd_capture(cfg, args) -> None:
+    if not cfg.capture.active_session_id:
+        answer = choose_option("No active RenderDoc target session", ["attach", "stop"], default="attach")
+        if answer != "attach":
+            raise UserActionRequired("No active RenderDoc target session. Run rdc-auto attach first.")
+        _cmd_attach(cfg, force=False, yes_vulkan=False)
+
     out = Path(args.out) if args.out else prompt_path("Capture output directory", cfg.capture.last_output_dir or None)
     service = CaptureService(cfg, _mcp_client(cfg), MuMu12(cfg))
     rdc_path = service.capture(out, timeout_seconds=args.timeout)
@@ -127,6 +140,22 @@ def _cmd_export(cfg, args) -> None:
 
 
 def _mcp_client(cfg) -> FileIpcMcpClient:
-    if not cfg.mcp.executable_path:
-        cfg.mcp.executable_path = str(McpInstaller(cfg).ensure_installed())
+    _ensure_runtime_ready(cfg)
     return FileIpcMcpClient(executable_path=cfg.mcp.executable_path)
+
+
+def _ensure_runtime_ready(cfg) -> None:
+    if not RenderDocInstaller(cfg).ensure_installed():
+        raise DependencyMissing("RenderDoc v1.44 was not found. Run rdc-auto setup before this command.")
+    cfg.mcp.executable_path = str(McpInstaller(cfg).ensure_installed())
+    _start_qrenderdoc(cfg)
+
+
+def _start_qrenderdoc(cfg) -> None:
+    qrenderdoc = Path(cfg.renderdoc.qrenderdoc_path)
+    if not qrenderdoc.is_file():
+        raise DependencyMissing(f"qrenderdoc.exe was not found: {qrenderdoc}")
+    kwargs = {"cwd": str(qrenderdoc.parent), "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if sys.platform.startswith("win"):
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen([str(qrenderdoc)], **kwargs)

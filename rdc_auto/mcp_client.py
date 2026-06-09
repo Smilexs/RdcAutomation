@@ -30,7 +30,10 @@ class FileIpcMcpClient:
 
     def ensure_started(self) -> None:
         if self._process is not None:
-            return
+            returncode = self._process_returncode(self._process)
+            if returncode is None:
+                return
+            self._process = None
         if self.executable_path is None:
             return
         if not self.executable_path.is_file():
@@ -39,6 +42,17 @@ class FileIpcMcpClient:
         if os.name == "nt":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         self._process = self.popen([str(self.executable_path)], **kwargs)
+        returncode = self._process_returncode(self._process)
+        if returncode is not None:
+            self._process = None
+            raise RdcAutoError(f"RenderDocMCP process exited immediately with code {returncode}")
+
+    @staticmethod
+    def _process_returncode(process) -> int | None:
+        poll = getattr(process, "poll", None)
+        if poll is None:
+            return None
+        return poll()
 
     def call(self, method: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> dict[str, Any]:
         self.ensure_started()

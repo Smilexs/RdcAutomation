@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from rdc_auto.errors import McpCapabilityMissing
+from rdc_auto.errors import McpCapabilityMissing, RdcAutoError
 from rdc_auto.mcp_client import FileIpcMcpClient
 
 
@@ -117,3 +117,46 @@ def test_client_starts_installed_executable_once(tmp_path):
     client.ensure_started()
 
     assert starts == [[str(exe)]]
+
+
+def test_client_restarts_when_previous_process_exited(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+    starts = []
+
+    class ExitedProcess:
+        def poll(self):
+            return 1
+
+    class RunningProcess:
+        def poll(self):
+            return None
+
+    def popen(args, **kwargs):
+        starts.append(args)
+        return RunningProcess()
+
+    client = FileIpcMcpClient(ipc_dir=tmp_path / "renderdoc_mcp", executable_path=exe, popen=popen)
+    client._process = ExitedProcess()
+
+    client.ensure_started()
+
+    assert starts == [[str(exe)]]
+
+
+def test_client_raises_when_started_process_exits_immediately(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+
+    class ExitedProcess:
+        def poll(self):
+            return 7
+
+    client = FileIpcMcpClient(
+        ipc_dir=tmp_path / "renderdoc_mcp",
+        executable_path=exe,
+        popen=lambda args, **kwargs: ExitedProcess(),
+    )
+
+    with pytest.raises(RdcAutoError, match="exited immediately"):
+        client.ensure_started()
