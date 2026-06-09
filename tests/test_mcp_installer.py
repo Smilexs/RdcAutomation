@@ -64,7 +64,7 @@ def test_parse_release_asset_rejects_other_setup_exes():
         parse_release_asset(release)
 
 
-def test_download_latest_installer_records_release_asset(tmp_path):
+def test_download_latest_installer_does_not_record_release_asset_before_install(tmp_path):
     cfg = AppConfig.default()
     cfg.mcp.install_dir = str(tmp_path / "mcp")
     release = {
@@ -90,9 +90,9 @@ def test_download_latest_installer_records_release_asset(tmp_path):
     path = installer.download_latest_installer()
 
     assert path == tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe"
-    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
-    assert cfg.mcp.asset_digest == "sha256:abc123"
-    assert cfg.mcp.installer_path == str(path)
+    assert cfg.mcp.asset_name == ""
+    assert cfg.mcp.asset_digest == ""
+    assert cfg.mcp.installer_path == ""
 
 
 def test_run_installer_executes_downloaded_exe(tmp_path):
@@ -162,6 +162,46 @@ def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tm
         ("download", "https://example/RenderDocMCP-Setup-1.0.0.exe", "RenderDocMCP-Setup-1.0.0.exe"),
         ("run", str(tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe")),
     ]
+
+
+def test_ensure_installed_does_not_record_latest_release_when_installer_fails(tmp_path):
+    old_exe = tmp_path / "old" / "RenderDocMCP.exe"
+    old_exe.parent.mkdir()
+    old_exe.write_bytes(b"old")
+    cfg = AppConfig.default()
+    cfg.mcp.install_dir = str(tmp_path / "mcp")
+    cfg.mcp.executable_path = str(old_exe)
+    cfg.mcp.asset_name = "RenderDocMCP-Setup-0.9.0.exe"
+    cfg.mcp.asset_digest = "sha256:old"
+    cfg.mcp.release_tag = "v0.9.0"
+    cfg.mcp.installer_path = str(tmp_path / "old-setup.exe")
+    release = {
+        "tag_name": "v1.0.0",
+        "assets": [
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+                "digest": "sha256:new",
+            }
+        ],
+    }
+
+    def downloader(url, target):
+        target.write_bytes(b"setup")
+
+    def runner(args, check):
+        raise subprocess.CalledProcessError(1, args)
+
+    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        installer.ensure_installed()
+
+    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-0.9.0.exe"
+    assert cfg.mcp.asset_digest == "sha256:old"
+    assert cfg.mcp.release_tag == "v0.9.0"
+    assert cfg.mcp.installer_path == str(tmp_path / "old-setup.exe")
+    assert cfg.mcp.executable_path == str(old_exe)
 
 
 def test_ensure_installed_accepts_configured_exe_only_when_release_asset_matches(tmp_path):

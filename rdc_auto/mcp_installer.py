@@ -78,7 +78,6 @@ class McpInstaller:
         downloads.mkdir(parents=True, exist_ok=True)
         target = downloads / asset.name
         self.downloader(asset.download_url, target)
-        self._record_asset(asset, target)
         return target
 
     def run_installer(self, installer_path: Path) -> None:
@@ -132,6 +131,7 @@ class McpInstaller:
         found = self.discover_executable(allow_configured=False)
         if not found:
             raise FileNotFoundError("RenderDocMCP installed, but its executable was not found. Set mcp.executable_path in config.json.")
+        self._record_asset(asset, installer)
         self.config.mcp.executable_path = str(found)
         return found
 
