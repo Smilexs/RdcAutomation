@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
+
 from rdc_auto.config import AppConfig
 from rdc_auto.mcp_installer import McpInstaller, parse_release_asset
 
@@ -24,6 +26,42 @@ def test_parse_release_asset_picks_setup_exe():
     assert asset.name == "RenderDocMCP-Setup-1.0.0.exe"
     assert asset.download_url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
     assert asset.digest == "sha256:abc123"
+
+
+def test_parse_release_asset_ignores_other_setup_exes():
+    release = {
+        "tag_name": "v1.0.0",
+        "assets": [
+            {
+                "name": "OtherTool-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/OtherTool-Setup-1.0.0.exe",
+            },
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+            },
+        ],
+    }
+
+    asset = parse_release_asset(release)
+
+    assert asset.name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert asset.download_url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
+
+
+def test_parse_release_asset_rejects_other_setup_exes():
+    release = {
+        "tag_name": "v1.0.0",
+        "assets": [
+            {
+                "name": "OtherTool-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/OtherTool-Setup-1.0.0.exe",
+            },
+        ],
+    }
+
+    with pytest.raises(ValueError):
+        parse_release_asset(release)
 
 
 def test_download_latest_installer_records_release_asset(tmp_path):

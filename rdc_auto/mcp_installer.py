@@ -22,7 +22,7 @@ def parse_release_asset(release: dict) -> ReleaseAsset:
     for asset in release.get("assets", []):
         name = str(asset.get("name", ""))
         lower = name.lower()
-        if lower.endswith(".exe") and "setup" in lower:
+        if lower.startswith("renderdocmcp-setup-") and lower.endswith(".exe"):
             return ReleaseAsset(
                 name=name,
                 download_url=str(asset["browser_download_url"]),
