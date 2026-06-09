@@ -56,6 +56,52 @@ def test_file_ipc_client_raises_for_missing_method(tmp_path):
     thread.join(timeout=1)
 
 
+def test_file_ipc_client_raises_for_method_not_found_code(tmp_path):
+    ipc = tmp_path / "renderdoc_mcp"
+    client = FileIpcMcpClient(ipc_dir=ipc, poll_interval=0.01, timeout=1.0)
+
+    def responder():
+        request_path = ipc / "request.json"
+        response_path = ipc / "response.json"
+        while not request_path.exists():
+            time.sleep(0.01)
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        request_path.unlink()
+        response_path.write_text(
+            json.dumps({"id": request["id"], "error": {"code": -32601, "message": "no such tool"}}),
+            encoding="utf-8",
+        )
+
+    thread = threading.Thread(target=responder)
+    thread.start()
+    with pytest.raises(McpCapabilityMissing):
+        client.call("launch_application")
+    thread.join(timeout=1)
+
+
+def test_file_ipc_client_ignores_stale_response_id(tmp_path):
+    ipc = tmp_path / "renderdoc_mcp"
+    client = FileIpcMcpClient(ipc_dir=ipc, poll_interval=0.01, timeout=1.0)
+
+    def responder():
+        request_path = ipc / "request.json"
+        response_path = ipc / "response.json"
+        while not request_path.exists():
+            time.sleep(0.01)
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        request_path.unlink()
+        response_path.write_text(json.dumps({"id": "stale", "result": {"status": "old"}}), encoding="utf-8")
+        time.sleep(0.05)
+        response_path.write_text(json.dumps({"id": request["id"], "result": {"status": "ok"}}), encoding="utf-8")
+
+    thread = threading.Thread(target=responder)
+    thread.start()
+    result = client.call("ping")
+    thread.join(timeout=1)
+
+    assert result == {"status": "ok"}
+
+
 def test_client_starts_installed_executable_once(tmp_path):
     exe = tmp_path / "RenderDocMCP.exe"
     exe.write_bytes(b"exe")

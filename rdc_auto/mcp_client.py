@@ -64,10 +64,11 @@ class FileIpcMcpClient:
                 raw = json.loads(response_path.read_text(encoding="utf-8"))
                 response_path.unlink(missing_ok=True)
                 if raw.get("id") != request_id:
-                    raise RdcAutoError(f"MCP response id mismatch for {method}")
+                    continue
                 if "error" in raw:
-                    message = raw["error"].get("message", str(raw["error"]))
-                    if "Method not found" in message:
+                    error = raw["error"]
+                    message = error.get("message", str(error))
+                    if error.get("code") == -32601 or "Method not found" in message:
                         raise McpCapabilityMissing(message)
                     raise RdcAutoError(message)
                 result = raw.get("result")
