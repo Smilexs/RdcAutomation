@@ -108,6 +108,68 @@ def test_setup_fails_when_renderdoc_missing_after_install(monkeypatch, capsys):
     assert "setup complete" not in capsys.readouterr().out
 
 
+def test_setup_does_not_persist_invalid_prompted_mumu_root(monkeypatch, tmp_path):
+    cfg = AppConfig.default()
+    cfg.renderdoc.qrenderdoc_path = "D:\\RenderDoc\\qrenderdoc.exe"
+    saved_roots = []
+
+    class FakeRenderDocInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            return True
+
+    class FakeMcpInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            return Path("D:\\RenderDocMCP.exe")
+
+    bad_root = tmp_path / "bad"
+
+    monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+    monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: saved_roots.append(config.emulator.root_dir))
+    monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
+    monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.cli.prompt_path", lambda label: bad_root)
+
+    assert main(["setup"]) == 1
+    assert cfg.emulator.root_dir == ""
+    assert saved_roots == [""]
+
+
+def test_attach_reprompts_when_configured_mumu_root_is_invalid(monkeypatch, tmp_path):
+    good_root = tmp_path / "good"
+    exe = good_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"exe")
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = str(tmp_path / "bad")
+    calls = []
+
+    class FakeCaptureService:
+        def __init__(self, config, mcp, mumu):
+            self.config = config
+
+        def attach(self, force=False, confirm_vulkan=False):
+            calls.append(("attach", self.config.emulator.root_dir))
+            return "s1"
+
+    monkeypatch.setattr("rdc_auto.cli._mcp_client", lambda config: object())
+    monkeypatch.setattr("rdc_auto.cli.prompt_path", lambda label: good_root)
+    monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+
+    from rdc_auto.cli import _cmd_attach
+
+    _cmd_attach(cfg, force=False, yes_vulkan=True)
+
+    assert cfg.emulator.root_dir == str(good_root)
+    assert calls == [("attach", str(good_root))]
+
+
 def test_main_saves_expected_error_config_mutations(monkeypatch):
     cfg = AppConfig.default()
     cfg.capture.active_session_id = "s1"
@@ -157,9 +219,13 @@ def test_main_saves_expected_error_config_mutations(monkeypatch):
     assert saved_executable_paths == ["D:\\RenderDocMCP.exe"]
 
 
-def test_attach_prepares_renderdoc_mcp_and_qrenderdoc_before_launch(monkeypatch):
+def test_attach_prepares_renderdoc_mcp_and_qrenderdoc_before_launch(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    cfg.emulator.root_dir = "D:\\MuMu"
+    mumu_root = tmp_path / "MuMu"
+    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    cfg.emulator.root_dir = str(mumu_root)
     calls = []
 
     class FakeRenderDocInstaller:
@@ -279,7 +345,11 @@ def test_start_qrenderdoc_reuses_existing_process(monkeypatch, tmp_path):
 
 def test_capture_prompts_to_attach_when_session_is_missing(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    cfg.emulator.root_dir = "D:\\MuMu"
+    mumu_root = tmp_path / "MuMu"
+    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    cfg.emulator.root_dir = str(mumu_root)
     output_dir = tmp_path / "captures"
     prompts = []
 

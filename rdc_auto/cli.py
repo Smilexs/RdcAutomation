@@ -96,9 +96,7 @@ def _cmd_setup(cfg) -> None:
         if not installer.ensure_installed():
             raise DependencyMissing("RenderDoc v1.44 installation completed, but qrenderdoc.exe with version 1.44 was not found.")
 
-    if not cfg.emulator.root_dir:
-        cfg.emulator.root_dir = str(prompt_path("MuMu12 root directory"))
-    validate_mumu_root(cfg.emulator.root_dir)
+    _ensure_mumu_root(cfg)
 
     mcp = McpInstaller(cfg)
     mcp_exe = mcp.ensure_installed()
@@ -107,8 +105,7 @@ def _cmd_setup(cfg) -> None:
 
 
 def _cmd_attach(cfg, force: bool, yes_vulkan: bool) -> None:
-    if not cfg.emulator.root_dir:
-        cfg.emulator.root_dir = str(prompt_path("MuMu12 root directory"))
+    _ensure_mumu_root(cfg)
     if not yes_vulkan:
         answer = choose_option("Confirm MuMu12 graphics API", ["vulkan", "stop"], default="vulkan")
         if answer != "vulkan":
@@ -150,6 +147,19 @@ def _mcp_client(cfg) -> FileIpcMcpClient:
     client = FileIpcMcpClient(executable_path=cfg.mcp.executable_path)
     _wait_for_mcp(client)
     return client
+
+
+def _ensure_mumu_root(cfg) -> Path:
+    if cfg.emulator.root_dir:
+        try:
+            return validate_mumu_root(cfg.emulator.root_dir)
+        except FileNotFoundError:
+            cfg.emulator.root_dir = ""
+
+    root = prompt_path("MuMu12 root directory")
+    exe = validate_mumu_root(root)
+    cfg.emulator.root_dir = str(root)
+    return exe
 
 
 def _start_qrenderdoc(cfg) -> None:
