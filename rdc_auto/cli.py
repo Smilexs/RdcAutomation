@@ -44,9 +44,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_logging(verbose=args.verbose)
-    cfg = load_config()
 
     try:
+        cfg = load_config()
         if args.command == "setup":
             _cmd_setup(cfg)
         elif args.command == "attach":

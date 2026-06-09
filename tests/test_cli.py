@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rdc_auto.prompts import choose_option, prompt_path
-from rdc_auto.cli import build_parser
+from rdc_auto.cli import build_parser, main
 
 
 def test_package_exposes_version():
@@ -55,3 +55,14 @@ def test_export_parser_accepts_assets_and_out():
     assert args.rdc_path == "D:\\a.rdc"
     assert args.assets == "textures"
     assert args.out == "D:\\Exports"
+
+
+def test_main_returns_error_when_config_load_fails(monkeypatch):
+    monkeypatch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+
+    def fail_load_config():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("rdc_auto.cli.load_config", fail_load_config)
+
+    assert main(["setup"]) == 1
