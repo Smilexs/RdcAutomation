@@ -19,8 +19,8 @@ The Skill is named `rdc-auto`. The CLI executable is `rdc-auto.exe`.
 In scope for the first release:
 
 - Install or verify RenderDoc v1.44 on Windows.
-- Clone or update `https://github.com/Smilexs/RenderDocMCP.git`.
-- Install the RenderDoc MCP RenderDoc extension and MCP server.
+- Download and install the latest RenderDocMCP Windows setup executable from `Smilexs/RenderDocMCP` GitHub releases.
+- Start RenderDocMCP from the installed executable.
 - Confirm the MuMu12 root installation directory.
 - Launch MuMu12 through RenderDoc using Vulkan.
 - Let the user play manually in MuMu12 after launch.
@@ -48,7 +48,7 @@ Developer fallback:
 - A `bootstrap.ps1` script can install or locate Python for developer use.
 - The Skill and user-facing instructions default to the packaged exe.
 
-Important boundary: the CLI executable itself must not require a user-installed Python, but RenderDoc MCP is a Python/uv project. `rdc-auto setup` must therefore provide or install a managed runtime for MCP when needed. This runtime should live under the tool-managed data directory and should not depend on a global Python installation.
+Important boundary: the CLI executable itself must not require a user-installed Python. RenderDocMCP is consumed as a release setup executable, so `rdc-auto setup` must not clone the MCP source repository or require the user to install Python/uv for MCP operation.
 
 ## Commands
 
@@ -90,24 +90,24 @@ Interactive behavior:
 
 ### RenderDoc MCP
 
-- Use the fixed repository: `https://github.com/Smilexs/RenderDocMCP.git`.
-- Clone or update into:
+- Query the latest release from:
 
 ```text
-%LOCALAPPDATA%\RdcAutomation\mcp\RenderDocMCP
+https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest
 ```
 
-- Install the RenderDoc extension using the repository installer script.
-- Install the MCP server using the repository's supported Python/uv flow.
-- If Python or uv is missing, install or unpack a tool-managed runtime instead of asking the user to install Python manually.
-- The managed runtime should be stored under:
+- Select the Windows setup asset matching `RenderDocMCP-Setup-*.exe`.
+- Download the installer to:
 
 ```text
-%LOCALAPPDATA%\RdcAutomation\runtime\
+%LOCALAPPDATA%\RdcAutomation\mcp\downloads\
 ```
 
+- Run the downloaded setup executable with its default install behavior.
+- Discover and record the installed RenderDocMCP executable path.
+- Start MCP from the installed executable when `rdc-auto attach`, `rdc-auto capture`, or `rdc-auto export` needs MCP access.
+- Do not clone the RenderDocMCP source repository and do not require Python/uv for the MCP install path.
 - CLI-managed MCP is the default mode.
-- A later command can generate MCP client configuration for external clients, but that is not a first-release blocker.
 
 ### MuMu12
 
@@ -322,8 +322,11 @@ Suggested shape:
     "renderdoccmd_path": "C:\\Program Files\\RenderDoc\\renderdoccmd.exe"
   },
   "mcp": {
-    "repo": "https://github.com/Smilexs/RenderDocMCP.git",
-    "path": "%LOCALAPPDATA%\\RdcAutomation\\mcp\\RenderDocMCP",
+    "release_api_url": "https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest",
+    "asset_name": "RenderDocMCP-Setup-1.0.0.exe",
+    "installer_path": "%LOCALAPPDATA%\\RdcAutomation\\mcp\\downloads\\RenderDocMCP-Setup-1.0.0.exe",
+    "install_dir": "%LOCALAPPDATA%\\RdcAutomation\\mcp",
+    "executable_path": "C:\\Users\\User\\AppData\\Local\\Programs\\RenderDocMCP\\RenderDocMCP.exe",
     "mode": "managed"
   },
   "emulator": {
@@ -354,8 +357,8 @@ rdc_auto/
   config.py               # config read/write
   paths.py                # RenderDoc, MuMu12, and workspace path discovery
   renderdoc_installer.py  # RenderDoc v1.44 download and default install
-  mcp_installer.py        # clone/update RenderDocMCP and install extension/server
-  mcp_client.py           # managed MCP process and tool calls
+  mcp_installer.py        # download/install RenderDocMCP release setup exe
+  mcp_client.py           # start installed MCP executable and issue tool calls
   emulator.py             # MuMu12 path validation and process checks
   capture.py              # attach/capture orchestration
   export_assets.py        # texture and mesh export orchestration

@@ -4,7 +4,7 @@
 
 **Goal:** Build the `rdc-auto` Windows CLI and Codex Skill for RenderDoc v1.44 + RenderDocMCP + MuMu12 Vulkan capture, then export textures and meshes from `.rdc` files.
 
-**Architecture:** The CLI is a Python package with focused modules for configuration, dependency setup, MuMu12 process checks, RenderDoc MCP bridge calls, capture orchestration, export orchestration, and mesh conversion. The Codex Skill remains thin and maps user intent to `rdc-auto setup`, `rdc-auto attach`, `rdc-auto capture`, and `rdc-auto export`.
+**Architecture:** The CLI is a Python package with focused modules for configuration, dependency setup, MuMu12 process checks, installed RenderDocMCP executable management, capture orchestration, export orchestration, and mesh conversion. The Codex Skill remains thin and maps user intent to `rdc-auto setup`, `rdc-auto attach`, `rdc-auto capture`, and `rdc-auto export`.
 
 **Tech Stack:** Python 3.11+, stdlib `argparse`/`json`/`subprocess`/`urllib`, pytest, PyInstaller, PowerShell bootstrap, Codex Skill Markdown.
 
@@ -34,7 +34,6 @@ rdc_auto/
   prompts.py
   log_setup.py
   renderdoc_installer.py
-  runtime.py
   mcp_installer.py
   mcp_client.py
   emulator.py
@@ -63,8 +62,8 @@ tests/
 
 Boundary decisions:
 
-- `rdc_auto.mcp_client.FileIpcMcpClient` talks to the RenderDocMCP bridge file IPC under `%TEMP%\renderdoc_mcp`. This avoids reimplementing the full MCP stdio protocol in the CLI while still using the RenderDocMCP bridge and tool names.
-- `rdc_auto.mcp_installer` still installs the RenderDocMCP extension and MCP server so external MCP clients can use it.
+- `rdc_auto.mcp_installer` downloads the latest Windows release asset from `https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest`, installs `RenderDocMCP-Setup-*.exe`, records the installed MCP executable path, and does not clone the source repository.
+- `rdc_auto.mcp_client.FileIpcMcpClient` starts the installed RenderDocMCP executable when needed, then talks to the RenderDocMCP bridge file IPC under `%TEMP%\renderdoc_mcp`.
 - Session lifecycle methods (`launch_application`, `get_target_status`, `trigger_capture`, `close_target`) are treated as required MCP bridge capabilities. The CLI fails with a clear message if the installed RenderDocMCP does not expose them.
 
 ---
@@ -258,7 +257,9 @@ def test_load_config_returns_defaults_when_missing(tmp_path, monkeypatch):
     cfg = load_config()
 
     assert cfg.renderdoc.version == "1.44"
-    assert cfg.mcp.repo == "https://github.com/Smilexs/RenderDocMCP.git"
+    assert cfg.mcp.release_api_url == "https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest"
+    assert cfg.mcp.asset_name == ""
+    assert cfg.mcp.executable_path == ""
     assert cfg.emulator.type == "mumu12"
     assert cfg.emulator.exe_relative_path == "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
     assert cfg.emulator.graphics_api == "vulkan"
@@ -304,7 +305,7 @@ from typing import Any
 
 
 APP_DIR_NAME = "RdcAutomation"
-MCP_REPO = "https://github.com/Smilexs/RenderDocMCP.git"
+MCP_RELEASE_API_URL = "https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest"
 MUMU_RELATIVE_EXE = "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
 
 
@@ -318,8 +319,11 @@ class RenderDocConfig:
 
 @dataclass
 class McpConfig:
-    repo: str = MCP_REPO
-    path: str = ""
+    release_api_url: str = MCP_RELEASE_API_URL
+    asset_name: str = ""
+    installer_path: str = ""
+    install_dir: str = ""
+    executable_path: str = ""
     mode: str = "managed"
 
 
@@ -340,26 +344,17 @@ class CaptureConfig:
 
 
 @dataclass
-class RuntimeConfig:
-    root_dir: str = ""
-    uv_path: str = ""
-    python_path: str = ""
-
-
-@dataclass
 class AppConfig:
     renderdoc: RenderDocConfig = field(default_factory=RenderDocConfig)
     mcp: McpConfig = field(default_factory=McpConfig)
     emulator: EmulatorConfig = field(default_factory=EmulatorConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
-    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
 
     @classmethod
     def default(cls) -> "AppConfig":
         cfg = cls()
         app_dir = app_data_dir()
-        cfg.mcp.path = str(app_dir / "mcp" / "RenderDocMCP")
-        cfg.runtime.root_dir = str(app_dir / "runtime")
+        cfg.mcp.install_dir = str(app_dir / "mcp")
         return cfg
 
 
@@ -401,7 +396,6 @@ def _from_dict(raw: dict[str, Any]) -> AppConfig:
         mcp=McpConfig(**{**asdict(default.mcp), **raw.get("mcp", {})}),
         emulator=EmulatorConfig(**{**asdict(default.emulator), **raw.get("emulator", {})}),
         capture=CaptureConfig(**{**asdict(default.capture), **raw.get("capture", {})}),
-        runtime=RuntimeConfig(**{**asdict(default.runtime), **raw.get("runtime", {})}),
     )
 ```
 
@@ -933,10 +927,9 @@ git commit -m "feat: add RenderDoc v1.44 installer support"
 
 ---
 
-### Task 6: Managed Runtime and RenderDocMCP Installer
+### Task 6: RenderDocMCP Release Installer
 
 **Files:**
-- Create: `rdc_auto/runtime.py`
 - Create: `rdc_auto/mcp_installer.py`
 - Create: `tests/test_mcp_installer.py`
 
@@ -948,82 +941,86 @@ Create `tests/test_mcp_installer.py`:
 from __future__ import annotations
 
 import subprocess
-import zipfile
 
 from rdc_auto.config import AppConfig
-from rdc_auto.mcp_installer import McpInstaller
-from rdc_auto.runtime import RuntimeManager, RuntimePaths
+from rdc_auto.mcp_installer import McpInstaller, parse_release_asset
 
 
-def test_runtime_manager_downloads_missing_runtime(tmp_path):
+def test_parse_release_asset_picks_setup_exe():
+    release = {
+        "tag_name": "v1.0.0",
+        "assets": [
+            {"name": "source.zip", "browser_download_url": "https://example/source.zip"},
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+                "digest": "sha256:abc123",
+            },
+        ],
+    }
+
+    asset = parse_release_asset(release)
+
+    assert asset.name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert asset.download_url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
+    assert asset.digest == "sha256:abc123"
+
+
+def test_download_latest_installer_records_release_asset(tmp_path):
     cfg = AppConfig.default()
-    cfg.runtime.root_dir = str(tmp_path / "runtime")
+    cfg.mcp.install_dir = str(tmp_path / "mcp")
+    release = {
+        "tag_name": "v1.0.0",
+        "assets": [
+            {
+                "name": "RenderDocMCP-Setup-1.0.0.exe",
+                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
+                "digest": "sha256:abc123",
+            }
+        ],
+    }
+
+    def fetch_json(url):
+        assert url == cfg.mcp.release_api_url
+        return release
 
     def downloader(url, target):
-        target.parent.mkdir(parents=True, exist_ok=True)
-        exe_name = "uv.exe" if "uv" in url else "python.exe"
-        with zipfile.ZipFile(target, "w") as archive:
-            archive.writestr(exe_name, "")
+        assert url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
+        target.write_bytes(b"exe")
 
-    runtime = RuntimeManager(cfg, which=lambda name: None, downloader=downloader).resolve()
+    installer = McpInstaller(cfg, fetch_json=fetch_json, downloader=downloader)
+    path = installer.download_latest_installer()
 
-    assert runtime.uv.endswith("uv.exe")
-    assert runtime.python.endswith("python.exe")
-    assert cfg.runtime.uv_path == runtime.uv
-    assert cfg.runtime.python_path == runtime.python
+    assert path == tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe"
+    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert cfg.mcp.installer_path == str(path)
 
 
-def test_clone_when_repo_missing(tmp_path):
+def test_run_installer_executes_downloaded_exe(tmp_path):
+    setup = tmp_path / "RenderDocMCP-Setup-1.0.0.exe"
+    setup.write_bytes(b"exe")
     calls = []
     cfg = AppConfig.default()
-    cfg.mcp.path = str(tmp_path / "RenderDocMCP")
 
-    def runner(args, check, cwd=None):
-        calls.append((args, cwd))
+    def runner(args, check):
+        calls.append(args)
         return subprocess.CompletedProcess(args, 0)
 
-    installer = McpInstaller(cfg, runtime=RuntimePaths("uv.exe", "python.exe"), runner=runner)
-    installer.ensure_repo()
+    installer = McpInstaller(cfg, runner=runner)
+    installer.run_installer(setup)
 
-    assert calls == [(["git", "clone", "https://github.com/Smilexs/RenderDocMCP.git", str(tmp_path / "RenderDocMCP")], None)]
+    assert calls == [[str(setup)]]
 
 
-def test_pull_when_repo_exists(tmp_path):
-    repo = tmp_path / "RenderDocMCP"
-    (repo / ".git").mkdir(parents=True)
-    calls = []
+def test_discover_executable_prefers_configured_path(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
     cfg = AppConfig.default()
-    cfg.mcp.path = str(repo)
+    cfg.mcp.executable_path = str(exe)
 
-    def runner(args, check, cwd=None):
-        calls.append((args, cwd))
-        return subprocess.CompletedProcess(args, 0)
+    installer = McpInstaller(cfg)
 
-    installer = McpInstaller(cfg, runtime=RuntimePaths("uv.exe", "python.exe"), runner=runner)
-    installer.ensure_repo()
-
-    assert calls == [(["git", "pull", "--ff-only"], str(repo))]
-
-
-def test_install_extension_and_server_commands(tmp_path):
-    repo = tmp_path / "RenderDocMCP"
-    scripts = repo / "scripts"
-    scripts.mkdir(parents=True)
-    (scripts / "install_extension.py").write_text("", encoding="utf-8")
-    calls = []
-    cfg = AppConfig.default()
-    cfg.mcp.path = str(repo)
-
-    def runner(args, check, cwd=None):
-        calls.append((args, cwd))
-        return subprocess.CompletedProcess(args, 0)
-
-    installer = McpInstaller(cfg, runtime=RuntimePaths("uv.exe", "python.exe"), runner=runner)
-    installer.install_extension()
-    installer.install_server()
-
-    assert calls[0] == (["python.exe", str(scripts / "install_extension.py")], str(repo))
-    assert calls[1] == (["uv.exe", "tool", "install", "--editable", "."], str(repo))
+    assert installer.discover_executable() == exe
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1034,97 +1031,48 @@ Run:
 python -m pytest tests/test_mcp_installer.py -v
 ```
 
-Expected: FAIL because `runtime.py` and `mcp_installer.py` do not exist.
+Expected: FAIL because `mcp_installer.py` does not exist.
 
-- [ ] **Step 3: Implement runtime and MCP installer**
-
-Create `rdc_auto/runtime.py`:
-
-```python
-from __future__ import annotations
-
-import shutil
-import urllib.request
-import zipfile
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
-
-from .config import AppConfig, app_data_dir
-
-
-UV_ZIP_URL = "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
-PYTHON_EMBED_ZIP_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
-
-
-@dataclass(frozen=True)
-class RuntimePaths:
-    uv: str
-    python: str
-
-
-class RuntimeManager:
-    def __init__(
-        self,
-        config: AppConfig,
-        which: Callable[[str], str | None] = shutil.which,
-        downloader: Callable[[str, Path], object] | None = None,
-    ):
-        self.config = config
-        self.which = which
-        self.downloader = downloader or self._download
-
-    def resolve(self) -> RuntimePaths:
-        uv = self._existing(self.config.runtime.uv_path) or self.which("uv") or ""
-        python = self._existing(self.config.runtime.python_path) or self.which("python") or ""
-        if not uv:
-            uv = str(self._ensure_tool_zip("uv", UV_ZIP_URL, "uv.exe"))
-        if not python:
-            python = str(self._ensure_tool_zip("python", PYTHON_EMBED_ZIP_URL, "python.exe"))
-        self.config.runtime.uv_path = uv
-        self.config.runtime.python_path = python
-        return RuntimePaths(uv=uv, python=python)
-
-    def _runtime_root(self) -> Path:
-        return Path(self.config.runtime.root_dir or app_data_dir() / "runtime")
-
-    def _existing(self, value: str) -> str:
-        return value if value and Path(value).is_file() else ""
-
-    def _ensure_tool_zip(self, name: str, url: str, exe_name: str) -> Path:
-        root = self._runtime_root() / name
-        existing = next(root.rglob(exe_name), None) if root.exists() else None
-        if existing and existing.is_file():
-            return existing
-        root.mkdir(parents=True, exist_ok=True)
-        archive_path = root / f"{name}.zip"
-        self.downloader(url, archive_path)
-        with zipfile.ZipFile(archive_path) as archive:
-            archive.extractall(root)
-        found = next(root.rglob(exe_name), None)
-        if not found:
-            raise FileNotFoundError(f"{exe_name} was not found in {archive_path}")
-        return found
-
-    @staticmethod
-    def _download(url: str, target: Path) -> object:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return urllib.request.urlretrieve(url, target)
-```
+- [ ] **Step 3: Implement release installer**
 
 Create `rdc_auto/mcp_installer.py`:
 
 ```python
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+import urllib.request
 
-from .config import AppConfig
-from .runtime import RuntimePaths
+from .config import AppConfig, app_data_dir
 
 
+@dataclass(frozen=True)
+class ReleaseAsset:
+    name: str
+    download_url: str
+    digest: str = ""
+
+
+def parse_release_asset(release: dict) -> ReleaseAsset:
+    for asset in release.get("assets", []):
+        name = str(asset.get("name", ""))
+        lower = name.lower()
+        if lower.endswith(".exe") and "setup" in lower:
+            return ReleaseAsset(
+                name=name,
+                download_url=str(asset["browser_download_url"]),
+                digest=str(asset.get("digest", "")),
+            )
+    raise ValueError("No RenderDocMCP setup .exe asset was found in the latest release")
+
+
+JsonFetcher = Callable[[str], dict]
+Downloader = Callable[[str, Path], object]
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
@@ -1132,32 +1080,71 @@ class McpInstaller:
     def __init__(
         self,
         config: AppConfig,
-        runtime: RuntimePaths,
+        fetch_json: JsonFetcher | None = None,
+        downloader: Callable[[str, Path], object] | None = None,
         runner: Runner = subprocess.run,
     ):
         self.config = config
-        self.runtime = runtime
+        self.fetch_json = fetch_json or self._fetch_json
+        self.downloader = downloader or self._download
         self.runner = runner
 
-    @property
-    def repo_path(self) -> Path:
-        return Path(self.config.mcp.path)
+    @staticmethod
+    def _fetch_json(url: str) -> dict:
+        request = urllib.request.Request(url, headers={"User-Agent": "rdc-auto"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
 
-    def ensure_repo(self) -> None:
-        if (self.repo_path / ".git").is_dir():
-            self.runner(["git", "pull", "--ff-only"], check=True, cwd=str(self.repo_path))
-            return
-        self.repo_path.parent.mkdir(parents=True, exist_ok=True)
-        self.runner(["git", "clone", self.config.mcp.repo, str(self.repo_path)], check=True, cwd=None)
+    @staticmethod
+    def _download(url: str, target: Path) -> object:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return urllib.request.urlretrieve(url, target)
 
-    def install_extension(self) -> None:
-        script = self.repo_path / "scripts" / "install_extension.py"
-        if not script.is_file():
-            raise FileNotFoundError(f"RenderDocMCP extension installer not found: {script}")
-        self.runner([self.runtime.python, str(script)], check=True, cwd=str(self.repo_path))
+    def download_latest_installer(self) -> Path:
+        release = self.fetch_json(self.config.mcp.release_api_url)
+        asset = parse_release_asset(release)
+        downloads = Path(self.config.mcp.install_dir or app_data_dir() / "mcp") / "downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        target = downloads / asset.name
+        self.downloader(asset.download_url, target)
+        self.config.mcp.asset_name = asset.name
+        self.config.mcp.installer_path = str(target)
+        return target
 
-    def install_server(self) -> None:
-        self.runner([self.runtime.uv, "tool", "install", "--editable", "."], check=True, cwd=str(self.repo_path))
+    def run_installer(self, installer_path: Path) -> None:
+        self.runner([str(installer_path)], check=True)
+
+    def discover_executable(self) -> Path | None:
+        configured = Path(self.config.mcp.executable_path) if self.config.mcp.executable_path else None
+        if configured and configured.is_file():
+            return configured
+
+        candidates = []
+        install_dir = Path(self.config.mcp.install_dir) if self.config.mcp.install_dir else app_data_dir() / "mcp"
+        for root in [
+            install_dir,
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "RenderDocMCP",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "RenderDocMCP",
+        ]:
+            if str(root):
+                candidates.extend([root / "RenderDocMCP.exe", root / "renderdoc-mcp.exe"])
+
+        for candidate in candidates:
+            if candidate.is_file():
+                self.config.mcp.executable_path = str(candidate)
+                return candidate
+        return None
+
+    def ensure_installed(self) -> Path:
+        existing = self.discover_executable()
+        if existing:
+            return existing
+        installer = self.download_latest_installer()
+        self.run_installer(installer)
+        found = self.discover_executable()
+        if not found:
+            raise FileNotFoundError("RenderDocMCP installed, but its executable was not found. Set mcp.executable_path in config.json.")
+        return found
 ```
 
 - [ ] **Step 4: Run MCP installer tests**
@@ -1173,8 +1160,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add rdc_auto/runtime.py rdc_auto/mcp_installer.py tests/test_mcp_installer.py
-git commit -m "feat: add RenderDocMCP installer orchestration"
+git add rdc_auto/mcp_installer.py tests/test_mcp_installer.py
+git commit -m "feat: install RenderDocMCP from release exe"
 ```
 
 ---
@@ -1193,6 +1180,7 @@ Create `tests/test_mcp_client.py`:
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -1245,6 +1233,23 @@ def test_file_ipc_client_raises_for_missing_method(tmp_path):
     with pytest.raises(McpCapabilityMissing):
         client.call("launch_application")
     thread.join(timeout=1)
+
+
+def test_client_starts_installed_executable_once(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+    starts = []
+
+    def popen(args, **kwargs):
+        starts.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    client = FileIpcMcpClient(ipc_dir=tmp_path / "renderdoc_mcp", executable_path=exe, popen=popen)
+
+    client.ensure_started()
+    client.ensure_started()
+
+    assert starts == [[str(exe)]]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1266,6 +1271,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -1278,15 +1284,33 @@ class FileIpcMcpClient:
     def __init__(
         self,
         ipc_dir: Path | None = None,
+        executable_path: str | Path | None = None,
+        popen=subprocess.Popen,
         poll_interval: float = 0.05,
         timeout: float = 30.0,
     ):
         temp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or Path.home())
         self.ipc_dir = ipc_dir or temp / "renderdoc_mcp"
+        self.executable_path = Path(executable_path) if executable_path else None
+        self.popen = popen
+        self._process = None
         self.poll_interval = poll_interval
         self.timeout = timeout
 
+    def ensure_started(self) -> None:
+        if self._process is not None:
+            return
+        if self.executable_path is None:
+            return
+        if not self.executable_path.is_file():
+            raise FileNotFoundError(f"RenderDocMCP executable not found: {self.executable_path}")
+        kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        self._process = self.popen([str(self.executable_path)], **kwargs)
+
     def call(self, method: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> dict[str, Any]:
+        self.ensure_started()
         self.ipc_dir.mkdir(parents=True, exist_ok=True)
         request_id = str(uuid.uuid4())
         request_path = self.ipc_dir / "request.json"
@@ -1962,7 +1986,6 @@ from .mcp_installer import McpInstaller
 from .paths import find_renderdoc_install, validate_mumu_root
 from .prompts import choose_option, prompt_path
 from .renderdoc_installer import RenderDocInstaller
-from .runtime import RuntimeManager
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2029,11 +2052,9 @@ def _cmd_setup(cfg) -> None:
         cfg.emulator.root_dir = str(prompt_path("MuMu12 root directory"))
     validate_mumu_root(cfg.emulator.root_dir)
 
-    runtime = RuntimeManager(cfg).resolve()
-    mcp = McpInstaller(cfg, runtime)
-    mcp.ensure_repo()
-    mcp.install_extension()
-    mcp.install_server()
+    mcp = McpInstaller(cfg)
+    mcp_exe = mcp.ensure_installed()
+    cfg.mcp.executable_path = str(mcp_exe)
     print("setup complete")
 
 
@@ -2044,14 +2065,14 @@ def _cmd_attach(cfg, force: bool, yes_vulkan: bool) -> None:
         answer = choose_option("Confirm MuMu12 graphics API", ["vulkan", "stop"], default="vulkan")
         if answer != "vulkan":
             raise UserActionRequired("Set MuMu12 graphics API to Vulkan before attach.")
-    service = CaptureService(cfg, FileIpcMcpClient(), MuMu12(cfg))
+    service = CaptureService(cfg, _mcp_client(cfg), MuMu12(cfg))
     session_id = service.attach(force=force, confirm_vulkan=True)
     print(f"attached session: {session_id}")
 
 
 def _cmd_capture(cfg, args) -> None:
     out = Path(args.out) if args.out else prompt_path("Capture output directory", cfg.capture.last_output_dir or None)
-    service = CaptureService(cfg, FileIpcMcpClient(), MuMu12(cfg))
+    service = CaptureService(cfg, _mcp_client(cfg), MuMu12(cfg))
     rdc_path = service.capture(out, timeout_seconds=args.timeout)
     print(f"captured: {rdc_path}")
 
@@ -2060,10 +2081,16 @@ def _cmd_export(cfg, args) -> None:
     rdc_path = Path(args.rdc_path) if args.rdc_path else prompt_path("RDC file", cfg.capture.last_rdc_path or None)
     assets = args.assets or choose_option("Export assets", ["textures", "meshes", "both"], default="both")
     out = Path(args.out) if args.out else prompt_path("Export output directory")
-    manifest = ExportService(FileIpcMcpClient()).export(rdc_path, out, assets)
+    manifest = ExportService(_mcp_client(cfg)).export(rdc_path, out, assets)
     print(f"export complete: {out}")
     print(f"textures: {manifest['assets']['textures']['success']} ok, {manifest['assets']['textures']['failed']} failed")
     print(f"meshes: {manifest['assets']['meshes']['success']} ok, {manifest['assets']['meshes']['failed']} failed")
+
+
+def _mcp_client(cfg) -> FileIpcMcpClient:
+    if not cfg.mcp.executable_path:
+        cfg.mcp.executable_path = str(McpInstaller(cfg).ensure_installed())
+    return FileIpcMcpClient(executable_path=cfg.mcp.executable_path)
 ```
 
 - [ ] **Step 4: Run CLI tests**
@@ -2136,7 +2163,7 @@ Use this Skill to drive the `rdc-auto` CLI. Keep the Skill thin: ask for missing
 
 - RenderDoc version is v1.44.
 - RenderDoc installer is downloaded from `https://renderdoc.org/builds` when RenderDoc is missing.
-- RenderDocMCP repository is `https://github.com/Smilexs/RenderDocMCP.git`.
+- RenderDocMCP is installed from the latest GitHub release setup executable at `https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest`.
 - The only supported emulator in the first release is MuMu12.
 - MuMu12 executable path is `<MuMu12Root>\MuMuPlayer-12.0\nx_main\MuMuNxMain.exe`.
 - MuMu12 must use Vulkan.
@@ -2276,8 +2303,8 @@ Run these checks on a Windows machine with MuMu12 installed.
 
 1. Run `rdc-auto setup`.
 2. Confirm RenderDoc v1.44 is detected or installed.
-3. Confirm RenderDocMCP is cloned under `%LOCALAPPDATA%\RdcAutomation\mcp\RenderDocMCP`.
-4. Confirm the RenderDocMCP extension is installed for qrenderdoc.
+3. Confirm RenderDocMCP setup exe is downloaded from the latest GitHub release.
+4. Confirm RenderDocMCP is installed and `config.json` records the installed executable path.
 5. Enter the MuMu12 root directory when prompted.
 6. Confirm `<MuMu12Root>\MuMuPlayer-12.0\nx_main\MuMuNxMain.exe` exists.
 
@@ -2347,8 +2374,8 @@ Expected: no uncommitted source, test, Skill, or docs changes.
 Spec coverage:
 
 - RenderDoc v1.44 setup: Task 5 and Task 11.
-- RenderDocMCP clone/install: Task 6 and Task 11.
-- Managed runtime boundary: Task 6 downloads or reuses tool-managed uv and embeddable Python when global tools are unavailable.
+- RenderDocMCP release exe install: Task 6 and Task 11.
+- Installed RenderDocMCP executable startup: Task 7 and Task 11.
 - MuMu12 root and fixed executable path: Task 4 and Task 11.
 - MuMu12 Vulkan prompt: Task 8 and Task 11.
 - RenderDoc-launched MuMu12 session: Task 8.
