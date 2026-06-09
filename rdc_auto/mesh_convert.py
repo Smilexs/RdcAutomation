@@ -9,6 +9,25 @@ def _fmt(values: Iterable[float]) -> str:
     return " ".join(f"{float(value):g}" for value in values)
 
 
+def _validate_mesh(
+    positions: list,
+    normals: list,
+    uvs: list,
+    indices: list,
+) -> None:
+    if len(indices) % 3 != 0:
+        raise ValueError("indices length must be a multiple of 3")
+
+    for raw_index in indices:
+        index = int(raw_index)
+        if index < 0 or index >= len(positions):
+            raise ValueError(f"position index {index} is out of range")
+        if uvs and index >= len(uvs):
+            raise ValueError(f"UV index {index} is out of range")
+        if normals and index >= len(normals):
+            raise ValueError(f"normal index {index} is out of range")
+
+
 def convert_mesh_json_to_obj(
     source_json: str | Path,
     obj_path: str | Path,
@@ -24,6 +43,8 @@ def convert_mesh_json_to_obj(
     normals = data.get("normal") or data.get("normals") or []
     uvs = data.get("uv0") or data.get("uv") or []
     indices = data.get("indices") or []
+
+    _validate_mesh(positions, normals, uvs, indices)
 
     obj_path.parent.mkdir(parents=True, exist_ok=True)
     mtl_path.parent.mkdir(parents=True, exist_ok=True)
