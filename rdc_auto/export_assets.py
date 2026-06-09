@@ -19,6 +19,16 @@ def safe_name(value: str) -> str:
     return cleaned.strip("_") or "unnamed"
 
 
+def _parse_event_id(value: object) -> int:
+    if type(value) is int and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        event_id = int(value)
+        if event_id > 0:
+            return event_id
+    raise ValueError(f"invalid event_id: {value!r}")
+
+
 class ExportService:
     def __init__(self, mcp: McpCaller):
         self.mcp = mcp
@@ -77,9 +87,8 @@ class ExportService:
         draws = self.mcp.call("get_draw_calls", {"include_children": True, "only_actions": True}, timeout=60.0).get("draws", [])
         for draw in draws:
             try:
-                event_id = int(draw.get("event_id") or draw.get("eventId") or 0)
-                if event_id <= 0:
-                    raise ValueError(f"invalid event_id: {event_id}")
+                raw_event_id = draw["event_id"] if "event_id" in draw else draw.get("eventId")
+                event_id = _parse_event_id(raw_event_id)
                 name = safe_name(str(draw.get("name") or f"draw_{event_id}"))
                 stem = f"{event_id}_{name}"
                 raw_json = raw_dir / f"{stem}.json"

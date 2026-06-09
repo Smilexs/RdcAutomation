@@ -66,6 +66,28 @@ class InvalidDrawIdMcp(FakeMcp):
         return {}
 
 
+class StrictDrawIdMcp(FakeMcp):
+    def call(self, method, params=None, timeout=None):
+        params = params or {}
+        self.calls.append((method, params, timeout))
+        if method == "open_capture":
+            return {"success": True}
+        if method == "get_draw_calls":
+            return {
+                "draws": [
+                    {"event_id": 12.7, "name": "Float"},
+                    {"event_id": True, "name": "Bool"},
+                    {"event_id": 13, "name": "Integer"},
+                    {"event_id": "14", "name": "StringInteger"},
+                ]
+            }
+        if method == "export_mesh_to_file":
+            with open(params["output_path"], "w", encoding="utf-8") as handle:
+                json.dump({"indices": [0, 1, 2], "position": [[0, 0, 0], [1, 0, 0], [0, 1, 0]]}, handle)
+            return {"output_path": params["output_path"]}
+        return {}
+
+
 class UnsafeTextureIdMcp(FakeMcp):
     def call(self, method, params=None, timeout=None):
         params = params or {}
@@ -137,6 +159,32 @@ def test_export_records_missing_zero_and_negative_draw_ids_as_failures(tmp_path)
     ]
     assert all(failure["type"] == "mesh" for failure in manifest["failures"])
     assert (tmp_path / "out" / "meshes" / "12_Character.obj").is_file()
+
+
+def test_export_records_non_integer_numeric_and_bool_draw_ids_as_failures(tmp_path):
+    rdc = tmp_path / "capture.rdc"
+    rdc.write_text("", encoding="utf-8")
+    mcp = StrictDrawIdMcp()
+    service = ExportService(mcp)
+
+    manifest = service.export(rdc, tmp_path / "out", assets="meshes")
+
+    mesh_export_event_ids = [
+        call[1]["event_id"]
+        for call in mcp.calls
+        if call[0] == "export_mesh_to_file"
+    ]
+    assert manifest["assets"]["meshes"]["failed"] == 2
+    assert manifest["assets"]["meshes"]["success"] == 2
+    assert mesh_export_event_ids == [13, 14]
+    assert [failure["draw"] for failure in manifest["failures"]] == [
+        {"event_id": 12.7, "name": "Float"},
+        {"event_id": True, "name": "Bool"},
+    ]
+    assert not (tmp_path / "out" / "meshes" / "12_Float.obj").exists()
+    assert not (tmp_path / "out" / "meshes" / "1_Bool.obj").exists()
+    assert (tmp_path / "out" / "meshes" / "13_Integer.obj").is_file()
+    assert (tmp_path / "out" / "meshes" / "14_StringInteger.obj").is_file()
 
 
 def test_export_sanitizes_texture_resource_id_only_for_filename(tmp_path):
