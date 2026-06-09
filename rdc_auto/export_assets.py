@@ -24,6 +24,8 @@ class ExportService:
         self.mcp = mcp
 
     def export(self, rdc_path: str | Path, output_dir: str | Path, assets: str) -> dict:
+        if assets not in {"textures", "meshes", "both"}:
+            raise ValueError(f"unsupported asset type: {assets}")
         rdc_path = Path(rdc_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -53,8 +55,9 @@ class ExportService:
         textures = self.mcp.call("get_textures", timeout=60.0).get("textures", [])
         for texture in textures:
             resource_id = str(texture.get("resource_id") or texture.get("id") or "")
+            resource_id_name = safe_name(resource_id)
             name = safe_name(str(texture.get("name") or "texture"))
-            path = textures_dir / f"{name}_{resource_id}.png"
+            path = textures_dir / f"{name}_{resource_id_name}.png"
             try:
                 self.mcp.call(
                     "export_texture_to_file",
@@ -73,15 +76,15 @@ class ExportService:
         raw_dir.mkdir(parents=True, exist_ok=True)
         draws = self.mcp.call("get_draw_calls", {"include_children": True, "only_actions": True}, timeout=60.0).get("draws", [])
         for draw in draws:
-            event_id = int(draw.get("event_id") or draw.get("eventId") or 0)
-            if event_id <= 0:
-                continue
-            name = safe_name(str(draw.get("name") or f"draw_{event_id}"))
-            stem = f"{event_id}_{name}"
-            raw_json = raw_dir / f"{stem}.json"
-            obj = meshes_dir / f"{stem}.obj"
-            mtl = meshes_dir / f"{stem}.mtl"
             try:
+                event_id = int(draw.get("event_id") or draw.get("eventId") or 0)
+                if event_id <= 0:
+                    continue
+                name = safe_name(str(draw.get("name") or f"draw_{event_id}"))
+                stem = f"{event_id}_{name}"
+                raw_json = raw_dir / f"{stem}.json"
+                obj = meshes_dir / f"{stem}.obj"
+                mtl = meshes_dir / f"{stem}.mtl"
                 self.mcp.call(
                     "export_mesh_to_file",
                     {"event_id": event_id, "output_path": str(raw_json)},
@@ -91,4 +94,4 @@ class ExportService:
                 manifest["assets"]["meshes"]["success"] += 1
             except Exception as exc:
                 manifest["assets"]["meshes"]["failed"] += 1
-                manifest["failures"].append({"type": "mesh", "event_id": event_id, "error": str(exc)})
+                manifest["failures"].append({"type": "mesh", "draw": draw, "error": str(exc)})
