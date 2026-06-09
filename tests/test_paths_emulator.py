@@ -40,12 +40,44 @@ def test_emulator_running_detects_tasklist_csv():
     assert calls[0][0] == "tasklist"
 
 
+def test_terminate_tree_raises_when_taskkill_fails():
+    calls = []
+
+    def runner(args, capture_output, text, check):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, stdout="not found", stderr="access denied")
+
+    proc = EmulatorProcess(runner=runner)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        proc.terminate_tree("MuMuNxMain.exe")
+
+    assert calls[0] == ["taskkill", "/IM", "MuMuNxMain.exe", "/T", "/F"]
+    message = str(excinfo.value)
+    assert "MuMuNxMain.exe" in message
+    assert "access denied" in message
+    assert "not found" in message
+
+
 def test_mumu12_resolve_updates_config(tmp_path):
     exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
     exe.parent.mkdir(parents=True)
     exe.write_text("", encoding="utf-8")
     cfg = AppConfig.default()
     cfg.emulator.root_dir = str(tmp_path)
+
+    mumu = MuMu12(cfg)
+
+    assert mumu.executable() == exe
+
+
+def test_mumu12_executable_uses_configured_relative_path(tmp_path):
+    exe = tmp_path / "CustomMuMu" / "bin" / "CustomMain.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("", encoding="utf-8")
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = str(tmp_path)
+    cfg.emulator.exe_relative_path = "CustomMuMu/bin/CustomMain.exe"
 
     mumu = MuMu12(cfg)
 

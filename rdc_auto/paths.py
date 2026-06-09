@@ -6,12 +6,12 @@ from pathlib import Path
 from .config import MUMU_RELATIVE_EXE
 
 
-def mumu_exe_path(root: str | Path) -> Path:
-    return Path(root) / Path(MUMU_RELATIVE_EXE)
+def mumu_exe_path(root: str | Path, relative_exe: str | Path = MUMU_RELATIVE_EXE) -> Path:
+    return Path(root) / Path(relative_exe)
 
 
-def validate_mumu_root(root: str | Path) -> Path:
-    exe = mumu_exe_path(root)
+def validate_mumu_root(root: str | Path, relative_exe: str | Path = MUMU_RELATIVE_EXE) -> Path:
+    exe = mumu_exe_path(root, relative_exe)
     if not exe.is_file():
         raise FileNotFoundError(f"MuMu12 executable not found: {exe}")
     return exe

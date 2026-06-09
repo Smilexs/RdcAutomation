@@ -31,7 +31,10 @@ class EmulatorProcess:
         return False
 
     def terminate_tree(self, image_name: str) -> None:
-        self._runner(["taskkill", "/IM", image_name, "/T", "/F"], capture_output=True, text=True, check=False)
+        result = self._runner(["taskkill", "/IM", image_name, "/T", "/F"], capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            details = "\n".join(part for part in [result.stderr, result.stdout] if part)
+            raise RuntimeError(f"Failed to terminate {image_name}: {details}")
 
 
 class MuMu12:
@@ -44,7 +47,7 @@ class MuMu12:
     def executable(self) -> Path:
         if not self.config.emulator.root_dir:
             raise FileNotFoundError("MuMu12 root directory is not configured")
-        return validate_mumu_root(self.config.emulator.root_dir)
+        return validate_mumu_root(self.config.emulator.root_dir, self.config.emulator.exe_relative_path)
 
     def is_running(self) -> bool:
         return self.process.is_running(self.image_name)
