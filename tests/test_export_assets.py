@@ -44,6 +44,28 @@ class MalformedDrawMcp(FakeMcp):
         return {}
 
 
+class InvalidDrawIdMcp(FakeMcp):
+    def call(self, method, params=None, timeout=None):
+        params = params or {}
+        self.calls.append((method, params, timeout))
+        if method == "open_capture":
+            return {"success": True}
+        if method == "get_draw_calls":
+            return {
+                "draws": [
+                    {"name": "Missing"},
+                    {"event_id": 0, "name": "Zero"},
+                    {"event_id": -7, "name": "Negative"},
+                    {"event_id": 12, "name": "Character"},
+                ]
+            }
+        if method == "export_mesh_to_file":
+            with open(params["output_path"], "w", encoding="utf-8") as handle:
+                json.dump({"indices": [0, 1, 2], "position": [[0, 0, 0], [1, 0, 0], [0, 1, 0]]}, handle)
+            return {"output_path": params["output_path"]}
+        return {}
+
+
 class UnsafeTextureIdMcp(FakeMcp):
     def call(self, method, params=None, timeout=None):
         params = params or {}
@@ -96,6 +118,24 @@ def test_export_records_malformed_draw_and_continues_mesh_export(tmp_path):
     assert manifest["assets"]["meshes"]["success"] == 1
     assert manifest["failures"][0]["type"] == "mesh"
     assert manifest["failures"][0]["draw"] == {"event_id": "bad", "name": "Broken"}
+    assert (tmp_path / "out" / "meshes" / "12_Character.obj").is_file()
+
+
+def test_export_records_missing_zero_and_negative_draw_ids_as_failures(tmp_path):
+    rdc = tmp_path / "capture.rdc"
+    rdc.write_text("", encoding="utf-8")
+    service = ExportService(InvalidDrawIdMcp())
+
+    manifest = service.export(rdc, tmp_path / "out", assets="meshes")
+
+    assert manifest["assets"]["meshes"]["failed"] == 3
+    assert manifest["assets"]["meshes"]["success"] == 1
+    assert [failure["draw"] for failure in manifest["failures"]] == [
+        {"name": "Missing"},
+        {"event_id": 0, "name": "Zero"},
+        {"event_id": -7, "name": "Negative"},
+    ]
+    assert all(failure["type"] == "mesh" for failure in manifest["failures"])
     assert (tmp_path / "out" / "meshes" / "12_Character.obj").is_file()
 
 

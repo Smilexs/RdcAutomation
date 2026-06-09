@@ -79,7 +79,7 @@ class ExportService:
             try:
                 event_id = int(draw.get("event_id") or draw.get("eventId") or 0)
                 if event_id <= 0:
-                    continue
+                    raise ValueError(f"invalid event_id: {event_id}")
                 name = safe_name(str(draw.get("name") or f"draw_{event_id}"))
                 stem = f"{event_id}_{name}"
                 raw_json = raw_dir / f"{stem}.json"
