@@ -1,0 +1,3 @@
+display_name: rdc-auto
+short_description: Automate RenderDoc v1.44 capture and asset export for MuMu12.
+default_prompt: Set up RenderDoc capture, launch MuMu12 through RenderDoc, capture a frame, or export textures and meshes from an RDC file.
