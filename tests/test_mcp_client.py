@@ -160,3 +160,27 @@ def test_client_raises_when_started_process_exits_immediately(tmp_path):
 
     with pytest.raises(RdcAutoError, match="exited immediately"):
         client.ensure_started()
+
+
+def test_client_raises_when_process_exits_while_waiting_for_response(tmp_path):
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+
+    class CrashedProcess:
+        def __init__(self):
+            self.calls = 0
+
+        def poll(self):
+            self.calls += 1
+            return None if self.calls == 1 else 9
+
+    client = FileIpcMcpClient(
+        ipc_dir=tmp_path / "renderdoc_mcp",
+        executable_path=exe,
+        popen=lambda args, **kwargs: CrashedProcess(),
+        poll_interval=0.01,
+        timeout=1.0,
+    )
+
+    with pytest.raises(RdcAutoError, match="exited while waiting"):
+        client.call("ping")

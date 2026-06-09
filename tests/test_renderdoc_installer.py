@@ -21,6 +21,15 @@ def test_parse_v144_windows_x64_url_accepts_absolute_url():
     assert parse_v144_windows_x64_url(html) == "https://renderdoc.org/stable/1.44/RenderDoc_1.44_64.exe"
 
 
+def test_parse_v144_windows_x64_url_does_not_match_longer_version():
+    html = """
+    <a href="/stable/1.441/RenderDoc_1.441_64.msi">Wrong installer</a>
+    <a href="/stable/1.44/RenderDoc_1.44_64.msi">Windows 64-bit installer</a>
+    """
+
+    assert parse_v144_windows_x64_url(html) == "https://renderdoc.org/stable/1.44/RenderDoc_1.44_64.msi"
+
+
 def test_parse_renderdoc_version_normalizes_major_minor():
     assert parse_renderdoc_version("renderdoccmd version 1.44.0") == "1.44"
     assert parse_renderdoc_version("RenderDoc v1.43") == "1.43"

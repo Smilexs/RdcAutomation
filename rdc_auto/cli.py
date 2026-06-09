@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import subprocess
 import sys
+import time
+from io import StringIO
 from pathlib import Path
 
 from .capture import CaptureService
 from .config import load_config, save_config
 from .emulator import MuMu12
-from .errors import DependencyMissing, RdcAutoError, UserActionRequired
+from .errors import DependencyMissing, McpCapabilityMissing, RdcAutoError, UserActionRequired
 from .export_assets import ExportService
 from .log_setup import configure_logging
 from .mcp_client import FileIpcMcpClient
@@ -140,22 +143,53 @@ def _cmd_export(cfg, args) -> None:
 
 
 def _mcp_client(cfg) -> FileIpcMcpClient:
-    _ensure_runtime_ready(cfg)
-    return FileIpcMcpClient(executable_path=cfg.mcp.executable_path)
-
-
-def _ensure_runtime_ready(cfg) -> None:
     if not RenderDocInstaller(cfg).ensure_installed():
         raise DependencyMissing("RenderDoc v1.44 was not found. Run rdc-auto setup before this command.")
-    cfg.mcp.executable_path = str(McpInstaller(cfg).ensure_installed())
+    cfg.mcp.executable_path = str(McpInstaller(cfg).runtime_executable())
     _start_qrenderdoc(cfg)
+    client = FileIpcMcpClient(executable_path=cfg.mcp.executable_path)
+    _wait_for_mcp(client)
+    return client
 
 
 def _start_qrenderdoc(cfg) -> None:
     qrenderdoc = Path(cfg.renderdoc.qrenderdoc_path)
     if not qrenderdoc.is_file():
         raise DependencyMissing(f"qrenderdoc.exe was not found: {qrenderdoc}")
+    if _process_is_running("qrenderdoc.exe"):
+        return
     kwargs = {"cwd": str(qrenderdoc.parent), "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if sys.platform.startswith("win"):
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen([str(qrenderdoc)], **kwargs)
+
+
+def _process_is_running(image_name: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    rows = csv.DictReader(StringIO(result.stdout))
+    return any(row.get("Image Name", "").lower() == image_name.lower() for row in rows)
+
+
+def _wait_for_mcp(client: FileIpcMcpClient, timeout_seconds: float = 30.0) -> None:
+    deadline = time.time() + timeout_seconds
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            if client.ping():
+                return
+            last_error = RdcAutoError("RenderDocMCP ping returned an unexpected response")
+        except McpCapabilityMissing:
+            return
+        except (FileNotFoundError, TimeoutError, RdcAutoError) as exc:
+            last_error = exc
+        time.sleep(0.25)
+    detail = f": {last_error}" if last_error else ""
+    raise DependencyMissing(f"RenderDocMCP did not become ready within {int(timeout_seconds)} seconds{detail}")

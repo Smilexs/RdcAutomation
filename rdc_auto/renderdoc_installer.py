@@ -18,7 +18,11 @@ def parse_v144_windows_x64_url(html: str) -> str:
     hrefs = re.findall(r"href=[\"']([^\"']+)[\"']", html, flags=re.IGNORECASE)
     for href in hrefs:
         lower = href.lower()
-        if "1.44" in lower and ("_64" in lower or "x64" in lower) and (lower.endswith(".msi") or lower.endswith(".exe")):
+        if (
+            re.search(r"(?<!\d)1\.44(?!\d)", lower)
+            and ("_64" in lower or "x64" in lower)
+            and (lower.endswith(".msi") or lower.endswith(".exe"))
+        ):
             if href.startswith("http://") or href.startswith("https://"):
                 return href
             if href.startswith("/"):

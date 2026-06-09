@@ -74,6 +74,11 @@ class FileIpcMcpClient:
 
         deadline = time.time() + (timeout if timeout is not None else self.timeout)
         while time.time() < deadline:
+            if self._process is not None:
+                returncode = self._process_returncode(self._process)
+                if returncode is not None:
+                    self._process = None
+                    raise RdcAutoError(f"RenderDocMCP process exited while waiting for method {method} with code {returncode}")
             if response_path.exists():
                 raw = json.loads(response_path.read_text(encoding="utf-8"))
                 response_path.unlink(missing_ok=True)

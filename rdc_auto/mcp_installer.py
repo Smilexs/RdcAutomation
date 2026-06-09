@@ -11,6 +11,11 @@ import urllib.request
 from .config import AppConfig, app_data_dir
 
 
+def is_release_setup_asset_name(name: str) -> bool:
+    lower = name.lower()
+    return lower.startswith("renderdocmcp-setup-") and lower.endswith(".exe")
+
+
 @dataclass(frozen=True)
 class ReleaseAsset:
     name: str
@@ -22,8 +27,7 @@ class ReleaseAsset:
 def parse_release_asset(release: dict) -> ReleaseAsset:
     for asset in release.get("assets", []):
         name = str(asset.get("name", ""))
-        lower = name.lower()
-        if lower.startswith("renderdocmcp-setup-") and lower.endswith(".exe"):
+        if is_release_setup_asset_name(name):
             return ReleaseAsset(
                 name=name,
                 download_url=str(asset["browser_download_url"]),
@@ -129,4 +133,12 @@ class McpInstaller:
         if not found:
             raise FileNotFoundError("RenderDocMCP installed, but its executable was not found. Set mcp.executable_path in config.json.")
         self.config.mcp.executable_path = str(found)
+        return found
+
+    def runtime_executable(self) -> Path:
+        if not is_release_setup_asset_name(self.config.mcp.asset_name):
+            raise FileNotFoundError("RenderDocMCP release setup install is not recorded. Run rdc-auto setup.")
+        found = self.discover_executable(allow_configured=True)
+        if not found:
+            raise FileNotFoundError("RenderDocMCP executable was not found. Run rdc-auto setup.")
         return found
