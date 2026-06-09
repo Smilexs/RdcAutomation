@@ -7,7 +7,7 @@ from pathlib import Path
 from .capture import CaptureService
 from .config import load_config, save_config
 from .emulator import MuMu12
-from .errors import RdcAutoError, UserActionRequired
+from .errors import DependencyMissing, RdcAutoError, UserActionRequired
 from .export_assets import ExportService
 from .log_setup import configure_logging
 from .mcp_client import FileIpcMcpClient
@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_logging(verbose=args.verbose)
+    cfg = None
 
     try:
         cfg = load_config()
@@ -58,9 +59,13 @@ def main(argv: list[str] | None = None) -> int:
         save_config(cfg)
         return 0
     except UserActionRequired as exc:
+        if cfg is not None:
+            save_config(cfg)
         print(str(exc), file=sys.stderr)
         return 2
     except RdcAutoError as exc:
+        if cfg is not None:
+            save_config(cfg)
         print(str(exc), file=sys.stderr)
         return 1
     except Exception as exc:
@@ -78,6 +83,8 @@ def _cmd_setup(cfg) -> None:
         cfg.renderdoc.install_dir = found.get("install_dir", "")
         cfg.renderdoc.qrenderdoc_path = found.get("qrenderdoc_path", "")
         cfg.renderdoc.renderdoccmd_path = found.get("renderdoccmd_path", "")
+        if not cfg.renderdoc.qrenderdoc_path:
+            raise DependencyMissing("RenderDoc installation completed, but qrenderdoc.exe was not found.")
 
     if not cfg.emulator.root_dir:
         cfg.emulator.root_dir = str(prompt_path("MuMu12 root directory"))
