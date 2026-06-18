@@ -30,6 +30,7 @@ class McpConfig:
     install_dir: str = ""
     executable_path: str = ""
     mode: str = "managed"
+    extension_patch_restart_required: bool = False
 
 
 @dataclass
@@ -38,6 +39,7 @@ class EmulatorConfig:
     root_dir: str = ""
     exe_relative_path: str = MUMU_RELATIVE_EXE
     graphics_api: str = "vulkan"
+    vm_index: str = ""
 
 
 @dataclass

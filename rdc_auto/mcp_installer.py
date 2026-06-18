@@ -93,6 +93,7 @@ class McpInstaller:
         install_dir = Path(self.config.mcp.install_dir) if self.config.mcp.install_dir else app_data_dir() / "mcp"
         for root in [
             install_dir,
+            Path(os.environ.get("LOCALAPPDATA", "")) / "RenderDocMCP",
             Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "RenderDocMCP",
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "RenderDocMCP",
         ]:

@@ -122,6 +122,20 @@ def test_discover_executable_prefers_configured_path(tmp_path):
     assert installer.discover_executable() == exe
 
 
+def test_discover_executable_checks_localappdata_renderdocmcp(tmp_path, monkeypatch):
+    local_app_data = tmp_path / "LocalAppData"
+    exe = local_app_data / "RenderDocMCP" / "RenderDocMCP.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"exe")
+    cfg = AppConfig.default()
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    installer = McpInstaller(cfg)
+
+    assert installer.discover_executable() == exe
+    assert cfg.mcp.executable_path == str(exe)
+
+
 def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tmp_path):
     old_exe = tmp_path / "old" / "RenderDocMCP.exe"
     old_exe.parent.mkdir()

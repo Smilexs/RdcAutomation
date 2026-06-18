@@ -6,7 +6,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .errors import McpCapabilityMissing, RdcAutoError
 
@@ -19,6 +19,8 @@ class FileIpcMcpClient:
         popen=subprocess.Popen,
         poll_interval: float = 0.05,
         timeout: float = 30.0,
+        process_alive: Callable[[], bool] | None = None,
+        process_description: str = "RenderDocMCP process",
     ):
         temp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or Path.home())
         self.ipc_dir = ipc_dir or temp / "renderdoc_mcp"
@@ -27,6 +29,8 @@ class FileIpcMcpClient:
         self._process = None
         self.poll_interval = poll_interval
         self.timeout = timeout
+        self.process_alive = process_alive
+        self.process_description = process_description
 
     def ensure_started(self) -> None:
         if self._process is not None:
@@ -79,6 +83,8 @@ class FileIpcMcpClient:
                 if returncode is not None:
                     self._process = None
                     raise RdcAutoError(f"RenderDocMCP process exited while waiting for method {method} with code {returncode}")
+            if self.process_alive is not None and not self.process_alive():
+                raise RdcAutoError(f"{self.process_description} exited while waiting for method {method}")
             if response_path.exists():
                 raw = json.loads(response_path.read_text(encoding="utf-8"))
                 response_path.unlink(missing_ok=True)

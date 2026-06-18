@@ -184,3 +184,18 @@ def test_client_raises_when_process_exits_while_waiting_for_response(tmp_path):
 
     with pytest.raises(RdcAutoError, match="exited while waiting"):
         client.call("ping")
+
+
+def test_client_raises_when_external_process_monitor_reports_exit(tmp_path):
+    states = [True, False]
+    client = FileIpcMcpClient(
+        ipc_dir=tmp_path / "renderdoc_mcp",
+        executable_path=None,
+        poll_interval=0.01,
+        timeout=1.0,
+        process_alive=lambda: states.pop(0) if states else False,
+        process_description="qrenderdoc.exe",
+    )
+
+    with pytest.raises(RdcAutoError, match="qrenderdoc.exe exited while waiting for method ping"):
+        client.call("ping")

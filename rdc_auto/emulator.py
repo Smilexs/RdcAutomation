@@ -39,6 +39,7 @@ class EmulatorProcess:
 
 class MuMu12:
     image_name = "MuMuNxMain.exe"
+    render_target_name = "MuMuVMHeadless"
 
     def __init__(self, config: AppConfig, process: EmulatorProcess | None = None):
         self.config = config
@@ -48,6 +49,24 @@ class MuMu12:
         if not self.config.emulator.root_dir:
             raise FileNotFoundError("MuMu12 root directory is not configured")
         return validate_mumu_root(self.config.emulator.root_dir, self.config.emulator.exe_relative_path)
+
+    def launch_spec(self) -> dict[str, Path | str]:
+        exe = self.executable()
+        vm_index = getattr(self.config.emulator, "vm_index", "").strip()
+        if not vm_index:
+            return {"exe_path": exe, "working_dir": exe.parent, "cmd_line": ""}
+
+        mumu_cli = exe.parent / "mumu-cli.exe"
+        if not mumu_cli.is_file():
+            raise FileNotFoundError(f"MuMu12 CLI executable not found: {mumu_cli}")
+        return {
+            "exe_path": mumu_cli,
+            "working_dir": mumu_cli.parent,
+            "cmd_line": f"control --vmindex {vm_index} launch",
+        }
+
+    def target_process_name(self) -> str:
+        return self.render_target_name
 
     def is_running(self) -> bool:
         return self.process.is_running(self.image_name)
