@@ -8,11 +8,9 @@ from rdc_auto.renderdoc_installer import RENDERDOC_VERSION
 
 
 def build_status_snapshot(cfg: AppConfig, process_counts: dict[str, int] | None = None) -> dict:
-    counts = process_counts or {}
-
     def process_count(name: str) -> int:
-        if name in counts:
-            return counts[name]
+        if process_counts is not None:
+            return process_counts.get(name, 0)
         return count_processes(name)
 
     renderdoc_ready = bool(cfg.renderdoc.qrenderdoc_path)

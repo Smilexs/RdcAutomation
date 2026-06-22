@@ -53,3 +53,30 @@ def test_default_config_has_gui_ai_settings(tmp_path, monkeypatch):
     assert cfg.ai.base_url == "https://api.openai.com/v1"
     assert cfg.ai.api_key == ""
     assert cfg.capture.active_launch_id == ""
+
+
+def test_legacy_config_without_gui_ai_loads_defaults(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    path = config_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "renderdoc": {"qrenderdoc_path": "D:\\RenderDoc\\qrenderdoc.exe"},
+                "capture": {"last_output_dir": "D:\\Captures"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_config()
+
+    assert cfg.renderdoc.qrenderdoc_path == "D:\\RenderDoc\\qrenderdoc.exe"
+    assert cfg.capture.last_output_dir == "D:\\Captures"
+    assert cfg.gui.window_width == 1320
+    assert cfg.gui.window_height == 860
+    assert cfg.gui.last_view == "dashboard"
+    assert cfg.ai.provider == "openai"
+    assert cfg.ai.model == "gpt-4.1-mini"
+    assert cfg.ai.base_url == "https://api.openai.com/v1"
+    assert cfg.ai.api_key == ""

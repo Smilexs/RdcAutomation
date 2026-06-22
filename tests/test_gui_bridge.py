@@ -18,3 +18,27 @@ def test_build_status_snapshot_contains_topbar_sections(tmp_path):
     assert snapshot["session"]["attached"] is True
     assert snapshot["session"]["launch_id"] == "launch-1"
     assert snapshot["config_preview"]["capture"]["active_launch_id"] == "launch-1"
+
+
+def test_build_status_snapshot_empty_process_counts_are_authoritative(monkeypatch):
+    cfg = AppConfig.default()
+
+    def fail_count_processes(name: str) -> int:
+        raise AssertionError(f"unexpected live process probe for {name}")
+
+    monkeypatch.setattr("rdc_auto.gui.status.count_processes", fail_count_processes)
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["mcp"]["running"] is False
+    assert snapshot["mcp"]["extension_loaded"] is False
+
+
+def test_build_status_snapshot_masks_saved_ai_api_key():
+    cfg = AppConfig.default()
+    cfg.ai.api_key = "sk-secret"
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["ai"]["api_key_saved"] is True
+    assert snapshot["config_preview"]["ai"]["api_key"] == "********"
