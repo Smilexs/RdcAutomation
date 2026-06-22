@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from rdc_auto.config import AppConfig
+from rdc_auto.config import AppConfig, load_config
+from rdc_auto.errors import UserActionRequired
 from rdc_auto.gui.bridge import GuiBridge
 from rdc_auto.gui.status import build_status_snapshot
 
@@ -71,3 +72,92 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
 
     assert response["ok"] is True
     assert response["data"]["mumu"]["vm_index"] == "1"
+
+
+def test_bridge_save_ai_does_not_persist_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_ai(
+        {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-secret",
+        }
+    )
+
+    assert response["ok"] is True
+    assert load_config().ai.api_key == ""
+
+
+def test_bridge_start_job_unsupported_action_returns_error_envelope():
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.start_job({"action": "missing"})
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "ValueError"
+    assert response["error"]["action_required"] is False
+
+
+def test_bridge_job_failure_preserves_user_action_required(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    def fail(ctx):
+        raise UserActionRequired("needs user action")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.check_environment", fail)
+    response = bridge.start_job({"action": "check_environment"})
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+
+    assert response["ok"] is True
+    assert job["ok"] is True
+    assert job["data"]["state"] == "failed"
+    assert job["data"]["error"]["action_required"] is True
+
+
+def test_bridge_attach_parses_false_string_params_as_false(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    calls = []
+
+    def fake_attach(ctx, force, confirm_vulkan, vm_index=""):
+        calls.append({"force": force, "confirm_vulkan": confirm_vulkan, "vm_index": vm_index})
+        return "launch-1"
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.attach", fake_attach)
+    response = bridge.start_job(
+        {
+            "action": "attach",
+            "params": {"force": "false", "confirm_vulkan": "false", "vm_index": "1"},
+        }
+    )
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+
+    assert job["data"]["state"] == "succeeded"
+    assert calls == [{"force": False, "confirm_vulkan": False, "vm_index": "1"}]
+
+
+def test_bridge_get_status_returns_error_envelope_on_runtime_error(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    def fail_load_config():
+        raise ValueError("bad config")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", fail_load_config)
+    response = bridge.get_status({})
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "ValueError"
+    assert response["error"]["message"] == "bad config"
+
+
+def test_bridge_open_path_empty_payload_returns_error_without_opening(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    opened = []
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.os.startfile", lambda path: opened.append(path), raising=False)
+    response = bridge.open_path({})
+
+    assert response["ok"] is False
+    assert opened == []
