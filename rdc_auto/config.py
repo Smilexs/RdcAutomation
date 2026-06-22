@@ -53,11 +53,28 @@ class CaptureConfig:
 
 
 @dataclass
+class GuiConfig:
+    window_width: int = 1320
+    window_height: int = 860
+    last_view: str = "dashboard"
+
+
+@dataclass
+class AiConfig:
+    provider: str = "openai"
+    model: str = "gpt-4.1-mini"
+    base_url: str = "https://api.openai.com/v1"
+    api_key: str = ""
+
+
+@dataclass
 class AppConfig:
     renderdoc: RenderDocConfig = field(default_factory=RenderDocConfig)
     mcp: McpConfig = field(default_factory=McpConfig)
     emulator: EmulatorConfig = field(default_factory=EmulatorConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
+    gui: GuiConfig = field(default_factory=GuiConfig)
+    ai: AiConfig = field(default_factory=AiConfig)
 
     @classmethod
     def default(cls) -> "AppConfig":
@@ -105,4 +122,6 @@ def _from_dict(raw: dict[str, Any]) -> AppConfig:
         mcp=McpConfig(**{**asdict(default.mcp), **raw.get("mcp", {})}),
         emulator=EmulatorConfig(**{**asdict(default.emulator), **raw.get("emulator", {})}),
         capture=CaptureConfig(**{**asdict(default.capture), **raw.get("capture", {})}),
+        gui=GuiConfig(**{**asdict(default.gui), **raw.get("gui", {})}),
+        ai=AiConfig(**{**asdict(default.ai), **raw.get("ai", {})}),
     )
