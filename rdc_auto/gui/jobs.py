@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
 from collections.abc import Callable
 from copy import deepcopy
+
+from rdc_auto.errors import UserActionRequired
 
 
 JobCallable = Callable[[Callable[[str, int], None]], dict]
@@ -51,7 +54,11 @@ class JobManager:
                     "progress": 0,
                     "logs": [],
                     "result": None,
-                    "error": {"type": "JobMissing", "message": f"Unknown job: {job_id}"},
+                    "error": {
+                        "type": "JobMissing",
+                        "message": f"Unknown job: {job_id}",
+                        "action_required": False,
+                    },
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -69,6 +76,7 @@ class JobManager:
 
         try:
             result = fn(emit)
+            json.dumps(result)
         except Exception as exc:
             self._update(
                 job_id,
@@ -76,7 +84,7 @@ class JobManager:
                 error={
                     "type": type(exc).__name__,
                     "message": str(exc),
-                    "action_required": type(exc).__name__ == "UserActionRequired",
+                    "action_required": isinstance(exc, UserActionRequired),
                 },
             )
             return
