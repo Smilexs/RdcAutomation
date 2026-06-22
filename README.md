@@ -31,6 +31,16 @@ This installs the package in editable mode with development dependencies and run
 
 The executable is written to `dist\rdc-auto.exe`. Build outputs (`build\`, `dist\`, `rdc-auto.spec`) are generated artifacts and are intentionally ignored by git.
 
+## Build GUI Executable
+
+```powershell
+.\scripts\build_gui_exe.ps1
+```
+
+The desktop executable is written to `dist\RdcAutomation.exe`.
+
+The GUI keeps the same workflow as the CLI: setup, attach, capture, and export. The AI assistant screen in the first GUI release stores UI settings and returns local diagnostic replies only.
+
 ## Basic Usage
 
 ```powershell
