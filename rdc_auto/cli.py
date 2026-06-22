@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _cmd_setup(cfg) -> None:
     _sync_operations_hooks()
-    _operations.setup_environment(_operations.OperationContext(config=cfg))
+    _operations.setup_environment(_operation_context(cfg))
     print("setup complete")
 
 
@@ -114,7 +114,7 @@ def _cmd_attach(cfg, force: bool, yes_vulkan: bool, vm_index: str | None = None)
             raise UserActionRequired("Set MuMu12 graphics API to Vulkan before attach.")
     _sync_operations_hooks()
     launch_id = _operations.attach(
-        _operations.OperationContext(config=cfg),
+        _operation_context(cfg),
         force=force,
         confirm_vulkan=True,
         vm_index=vm_index or "",
@@ -125,7 +125,7 @@ def _cmd_attach(cfg, force: bool, yes_vulkan: bool, vm_index: str | None = None)
 def _cmd_capture(cfg, args) -> None:
     out = Path(args.out) if args.out else prompt_path("Capture output directory", cfg.capture.last_output_dir or None)
     _sync_operations_hooks()
-    rdc_path = _operations.capture(_operations.OperationContext(config=cfg), out, timeout_seconds=args.timeout)
+    rdc_path = _operations.capture(_operation_context(cfg), out, timeout_seconds=args.timeout)
     print(f"captured: {rdc_path}")
 
 
@@ -134,10 +134,14 @@ def _cmd_export(cfg, args) -> None:
     assets = args.assets or choose_option("Export assets", ["textures", "meshes", "both"], default="both")
     out = Path(args.out) if args.out else prompt_path("Export output directory")
     _sync_operations_hooks()
-    manifest = _operations.export_assets(_operations.OperationContext(config=cfg), rdc_path, out, assets)
+    manifest = _operations.export_assets(_operation_context(cfg), rdc_path, out, assets)
     print(f"export complete: {out}")
     print(f"textures: {manifest['assets']['textures']['success']} ok, {manifest['assets']['textures']['failed']} failed")
     print(f"meshes: {manifest['assets']['meshes']['success']} ok, {manifest['assets']['meshes']['failed']} failed")
+
+
+def _operation_context(cfg) -> _operations.OperationContext:
+    return _operations.OperationContext(config=cfg, save_config_fn=save_config)
 
 
 def _mcp_client(cfg, require_capture_connect: bool = False) -> FileIpcMcpClient:
@@ -214,7 +218,6 @@ def _sync_operations_hooks() -> None:
     _operations.canonical_mumu_root = canonical_mumu_root
     _operations.validate_mumu_root = validate_mumu_root
     _operations.prompt_path = prompt_path
-    _operations.save_config = save_config
     _operations.count_processes = _process_count
     _operations.is_process_running = _process_is_running
     _operations.terminate_process_tree = _terminate_process_tree

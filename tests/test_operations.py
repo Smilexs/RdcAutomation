@@ -9,6 +9,47 @@ from rdc_auto.errors import UserActionRequired
 from rdc_auto.operations import OperationContext, check_environment, release_session, start_mcp, stop_mcp
 
 
+def test_cli_save_monkeypatch_does_not_pollute_direct_operation_save(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    cfg = AppConfig.default()
+    cfg.capture.active_session_id = "session-1"
+    cfg.capture.active_launch_id = "launch-1"
+    cfg.capture.active_pid = 123
+    cfg.capture.active_session_started_at = "2026-06-22T00:00:00+08:00"
+    mumu_root = tmp_path / "MuMu"
+    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    cfg.emulator.root_dir = str(mumu_root)
+    save_config(cfg)
+
+    class FakeCaptureService:
+        def __init__(self, config, mcp, mumu):
+            self.config = config
+
+        def attach(self, force=False, confirm_vulkan=False):
+            return "launch-2"
+
+    with monkeypatch.context() as cli_patch:
+        cli_patch.setattr("rdc_auto.cli.configure_logging", lambda verbose=False: None)
+        cli_patch.setattr("rdc_auto.cli.load_config", lambda: cfg)
+        cli_patch.setattr("rdc_auto.cli.save_config", lambda config: None)
+        cli_patch.setattr("rdc_auto.cli._capture_bridge_client", lambda config, start_qrenderdoc: object())
+        cli_patch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+
+        from rdc_auto.cli import main
+
+        assert main(["attach", "--yes-vulkan"]) == 0
+
+    release_session(OperationContext(config=None))
+
+    saved = load_config()
+    assert saved.capture.active_session_id is None
+    assert saved.capture.active_launch_id == ""
+    assert saved.capture.active_pid is None
+    assert saved.capture.active_session_started_at is None
+
+
 def test_release_session_clears_capture_state(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     cfg = AppConfig.default()

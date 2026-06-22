@@ -9,7 +9,7 @@ from typing import Callable
 
 from .capture import CaptureService
 from .capture_bridge import CaptureBridgeClient, CaptureBridgeInstaller
-from .config import AppConfig, load_config, save_config
+from .config import AppConfig, load_config, save_config as _save_config
 from .emulator import MuMu12
 from .errors import DependencyMissing, McpCapabilityMissing, RdcAutoError, UserActionRequired
 from .export_assets import ExportService
@@ -26,6 +26,7 @@ from .renderdoc_installer import RenderDocInstaller
 class OperationContext:
     config: AppConfig | None = None
     progress: Callable[[str, int], None] | None = None
+    save_config_fn: Callable[[AppConfig], None] | None = None
 
     def cfg(self) -> AppConfig:
         if self.config is None:
@@ -37,7 +38,8 @@ class OperationContext:
             self.progress(message, percent)
 
     def save(self) -> None:
-        save_config(self.cfg())
+        save_config_fn = self.save_config_fn or _save_config
+        save_config_fn(self.cfg())
 
 
 def setup_environment(ctx: OperationContext) -> None:
