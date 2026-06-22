@@ -41,6 +41,8 @@ The desktop executable is written to `dist\RdcAutomation.exe`.
 
 The GUI keeps the same workflow as the CLI: setup, attach, capture, and export. The AI assistant screen in the first GUI release stores UI settings and returns local diagnostic replies only.
 
+GUI build outputs (`build\`, `dist\`, `RdcAutomation.spec`) are generated artifacts and are intentionally ignored by git.
+
 ## Basic Usage
 
 ```powershell

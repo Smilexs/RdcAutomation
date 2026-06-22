@@ -10,7 +10,7 @@ Use this checklist for a human GUI pass after the packaged desktop build is avai
 
 ## Environment
 
-- [ ] Start the GUI on a Windows machine with Python project prerequisites already installed.
+- [ ] Start the GUI on a Windows machine with the RenderDoc/MuMu workflow prerequisites available.
 - [ ] Verify the setup screen opens and displays configured RenderDoc, RenderDocMCP, MuMu, capture, and export paths.
 - [ ] Verify editing settings stores values in the same configuration used by the CLI.
 - [ ] Verify validation errors are shown clearly when required paths are missing or invalid.
