@@ -21,6 +21,18 @@ def test_gui_index_is_packaged():
     assert "window.pywebview" in html
 
 
+def test_gui_index_has_backend_action_mapping():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "function callBackend" in html
+    assert "function runJobAction" in html
+    assert '"check-env": "check_environment"' in html
+    assert '"attach": "attach"' in html
+    assert '"capture": "capture"' in html
+    assert '"export": "export"' in html
+    assert 'window.RdcBackend.call("start_job"' in html
+
+
 def test_build_window_options_points_to_packaged_index(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
 

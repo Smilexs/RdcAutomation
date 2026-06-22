@@ -1217,6 +1217,7 @@
       mumuReady: true,
       sessionAttached: false,
       lastRdcPath: "D:\\RdcCaptures\\mumu12_20260617_160827.rdc",
+      backendConfigPreview: null,
       exportSummary: {
         texturesOk: 86,
         texturesFailed: 2,
@@ -1261,6 +1262,197 @@
       node.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
       root.appendChild(node);
       window.setTimeout(() => node.remove(), 3600);
+    }
+
+    async function callBackend(method, payload) {
+      try {
+        const response = method === "start_job"
+          ? await window.RdcBackend.call("start_job", payload || {})
+          : await window.RdcBackend.call(method, payload || {});
+        (response.logs || []).forEach((entry) => log(entry));
+        if (!response.ok) {
+          const error = response.error || {};
+          const message = error.message || `Backend call failed: ${method}`;
+          log(`backend error ${method}: ${message}`);
+          toast("Backend error", message);
+        }
+        return response;
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        log(`backend exception ${method}: ${message}`);
+        toast("Backend error", message);
+        return { ok: false, error: { type: "FrontendBackendError", message, action_required: false }, logs: [] };
+      }
+    }
+
+    const backendJobActions = {
+      "check-env": "check_environment",
+      "install-env": "setup",
+      "check-mcp": "start_mcp",
+      "start-mcp": "start_mcp",
+      "stop-mcp": "stop_mcp",
+      "restart-mcp": "restart_mcp",
+      "install-mcp": "setup",
+      "quick-attach": "attach",
+      "attach": "attach",
+      "quick-capture": "capture",
+      "capture": "capture",
+      "release-session": "release_session",
+      "export": "export"
+    };
+
+    function setInputValue(id, value) {
+      const node = document.getElementById(id);
+      if (node && value !== undefined && value !== null) node.value = value;
+    }
+
+    function setProgressValue(selector, value, active) {
+      const progress = selector ? $(selector) : null;
+      if (!progress) return;
+      const bar = progress.querySelector("span");
+      progress.classList.toggle("active", Boolean(active));
+      if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(value) || 0))}%`;
+    }
+
+    function collectActionParams(action) {
+      if (action === "attach" || action === "quick-attach") {
+        return {
+          vm_index: $("#vmIndex") ? $("#vmIndex").value : "",
+          force: Boolean($("#forceCloseMumu") && $("#forceCloseMumu").checked),
+          confirm_vulkan: Boolean(($("#attachVulkan") && $("#attachVulkan").checked) || ($("#vulkanConfirmed") && $("#vulkanConfirmed").checked))
+        };
+      }
+      if (action === "capture" || action === "quick-capture") {
+        return {
+          output_dir: $("#captureOut") ? $("#captureOut").value : "",
+          timeout_seconds: $("#captureTimeout") ? $("#captureTimeout").value : "60"
+        };
+      }
+      if (action === "export") {
+        return {
+          rdc_path: $("#rdcPath") ? $("#rdcPath").value : "",
+          output_dir: $("#exportOut") ? $("#exportOut").value : "",
+          assets: $("#assetType") ? $("#assetType").value : "both"
+        };
+      }
+      return {};
+    }
+
+    function progressSelectorForAction(action) {
+      if (action.indexOf("env") >= 0 || action.indexOf("mcp") >= 0) return "#envProgress";
+      if (action.indexOf("attach") >= 0 || action === "release-session") return "#attachProgress";
+      if (action.indexOf("capture") >= 0) return "#captureProgress";
+      if (action === "export") return "#exportProgress";
+      return "";
+    }
+
+    async function runJobAction(action, params, progressSelector, done) {
+      setProgressValue(progressSelector, 1, true);
+      const start = await callBackend("start_job", { action, params: params || {} });
+      if (!start.ok) {
+        setProgressValue(progressSelector, 0, false);
+        return null;
+      }
+      const jobId = start.data && start.data.job_id;
+      if (!jobId) {
+        toast("Backend error", "Backend did not return a job id.");
+        setProgressValue(progressSelector, 0, false);
+        return null;
+      }
+      return new Promise((resolve) => {
+        const poll = async () => {
+          const response = await callBackend("get_job", { job_id: jobId });
+          if (!response.ok) {
+            setProgressValue(progressSelector, 0, false);
+            resolve(null);
+            return;
+          }
+          const job = response.data || {};
+          setProgressValue(progressSelector, job.progress || 0, true);
+          if (job.state === "succeeded") {
+            setProgressValue(progressSelector, 100, true);
+            window.setTimeout(() => setProgressValue(progressSelector, 100, false), 220);
+            const result = job.result || {};
+            if (done) done(result);
+            await refreshStatusFromBackend();
+            resolve(result);
+            return;
+          }
+          if (job.state === "failed" || job.state === "missing") {
+            const error = job.error || {};
+            const message = error.message || "Backend job failed.";
+            log(`backend job failed ${action}: ${message}`);
+            toast("Backend job failed", message);
+            setProgressValue(progressSelector, 0, false);
+            resolve(null);
+            return;
+          }
+          window.setTimeout(poll, 350);
+        };
+        window.setTimeout(poll, 350);
+      });
+    }
+
+    async function refreshStatusFromBackend() {
+      const response = await callBackend("get_status", {});
+      if (response.ok) {
+        applyBackendStatus(response.data);
+      } else {
+        updateStatus();
+      }
+      return response;
+    }
+
+    function applyBackendStatus(snapshot) {
+      snapshot = snapshot || {};
+      const renderdoc = snapshot.renderdoc || {};
+      const mumu = snapshot.mumu || {};
+      const mcp = snapshot.mcp || {};
+      const session = snapshot.session || {};
+      const paths = snapshot.paths || {};
+      state.renderdocReady = Boolean(renderdoc.ready);
+      state.mumuReady = Boolean(mumu.ready);
+      state.mcpReady = Boolean(mcp.ready);
+      state.mcpRunning = Boolean(mcp.running);
+      state.mcpExtensionLoaded = Boolean(mcp.extension_loaded);
+      state.mcpVersion = mcp.version || state.mcpVersion;
+      state.sessionAttached = Boolean(session.attached);
+      if (paths.last_rdc_path) state.lastRdcPath = paths.last_rdc_path;
+      state.backendConfigPreview = snapshot.config_preview || null;
+      setInputValue("renderdocPath", renderdoc.path);
+      setInputValue("mumuRoot", mumu.root_dir);
+      setInputValue("vmIndex", mumu.vm_index);
+      setInputValue("mcpPath", mcp.path);
+      setInputValue("rdcPath", paths.last_rdc_path);
+      setInputValue("eidRdcPath", paths.last_rdc_path);
+      const preview = $("#configPreview");
+      if (preview && snapshot.config_preview) preview.value = JSON.stringify(snapshot.config_preview, null, 2);
+      updateStatus();
+    }
+
+    function collectEnvironmentParams() {
+      return {
+        renderdoc_path: $("#renderdocPath") ? $("#renderdocPath").value : "",
+        mumu_root: $("#mumuRoot") ? $("#mumuRoot").value : "",
+        vm_index: $("#vmIndex") ? $("#vmIndex").value : "",
+        graphics_api: "vulkan"
+      };
+    }
+
+    function collectMcpParams() {
+      return {
+        executable_path: $("#mcpPath") ? $("#mcpPath").value : "",
+        release_tag: $("#mcpReleaseTag") ? $("#mcpReleaseTag").value : ""
+      };
+    }
+
+    function collectAiParams() {
+      return {
+        provider: $("#aiProvider") ? $("#aiProvider").value : "openai",
+        model: $("#aiModel") ? $("#aiModel").value : "gpt-4.1-mini",
+        base_url: $("#aiBaseUrl") ? $("#aiBaseUrl").value : "",
+        api_key: $("#aiKey") ? $("#aiKey").value : ""
+      };
     }
 
     function setView(viewName) {
@@ -1344,7 +1536,7 @@
         },
       };
       const preview = $("#configPreview");
-      if (preview) preview.value = JSON.stringify(cfg, null, 2);
+      if (preview) preview.value = JSON.stringify(state.backendConfigPreview || cfg, null, 2);
     }
 
     function renderRecent() {
@@ -1484,7 +1676,55 @@
       });
     }
 
-    function handleAction(action) {
+    async function handleAction(action) {
+      if (window.RdcBackend.available()) {
+        if (action === "refresh-status") {
+          await refreshStatusFromBackend();
+          toast("Status refreshed", "Backend status loaded.");
+          return;
+        }
+        if (backendJobActions[action]) {
+          if (action === "quick-attach") setView("capture");
+          const backendAction = backendJobActions[action];
+          const params = collectActionParams(action);
+          const progressSelector = progressSelectorForAction(action);
+          await runJobAction(backendAction, params, progressSelector, (result) => {
+            if (result && result.rdc_path) {
+              state.lastRdcPath = result.rdc_path;
+              setInputValue("rdcPath", result.rdc_path);
+              setInputValue("eidRdcPath", result.rdc_path);
+            }
+            toast("Action complete", `${backendAction} completed.`);
+          });
+          return;
+        }
+        if (action === "save-env") {
+          const response = await callBackend("save_environment", collectEnvironmentParams());
+          if (response.ok) {
+            applyBackendStatus(response.data);
+            toast("Config saved", "Environment config saved.");
+          }
+          return;
+        }
+        if (action === "save-mcp") {
+          const response = await callBackend("save_mcp", collectMcpParams());
+          if (response.ok) {
+            applyBackendStatus(response.data);
+            toast("Config saved", "MCP config saved.");
+          }
+          return;
+        }
+        if (action === "save-ai") {
+          const response = await callBackend("save_ai", collectAiParams());
+          if (response.ok) toast("AI config saved", "AI settings saved locally.");
+          return;
+        }
+        if (action === "test-ai") {
+          const response = await callBackend("test_ai", collectAiParams());
+          if (response.ok) toast("AI test", "Local GUI mode is available.");
+          return;
+        }
+      }
       switch (action) {
         case "refresh-status":
           toast("状态已刷新", "这里未来会调用本地后端检测 RenderDoc、MCP、MuMu12 和会话。");
@@ -1740,7 +1980,11 @@
     });
 
     renderEidTable();
-    updateStatus();
+    if (window.RdcBackend.available()) {
+      refreshStatusFromBackend();
+    } else {
+      updateStatus();
+    }
     log("RdcAutomation HTML prototype loaded");
   </script>
 </body>
