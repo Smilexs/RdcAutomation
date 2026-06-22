@@ -134,7 +134,11 @@ def release_session(ctx: OperationContext) -> None:
 
 
 def start_mcp(ctx: OperationContext) -> FileIpcMcpClient:
-    client = mcp_client(ctx.cfg())
+    try:
+        client = mcp_client(ctx.cfg())
+    except RdcAutoError:
+        ctx.save()
+        raise
     ctx.save()
     return client
 

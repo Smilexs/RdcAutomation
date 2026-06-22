@@ -6,7 +6,7 @@ import pytest
 
 from rdc_auto.config import AppConfig, load_config, save_config
 from rdc_auto.errors import UserActionRequired
-from rdc_auto.operations import OperationContext, check_environment, release_session, stop_mcp
+from rdc_auto.operations import OperationContext, check_environment, release_session, start_mcp, stop_mcp
 
 
 def test_release_session_clears_capture_state(monkeypatch, tmp_path):
@@ -100,3 +100,38 @@ def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_
     assert result["mcp_executable_path"] == str(exe)
     assert cfg.mcp.executable_path == str(exe)
     assert load_config().mcp.executable_path == str(exe)
+
+
+def test_start_mcp_persists_restart_required_when_patch_requires_closed_renderdoc(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    cfg = AppConfig.default()
+    save_config(cfg)
+    exe = tmp_path / "RenderDocMCP.exe"
+    exe.write_bytes(b"exe")
+
+    class FakeRenderDocInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            self.config.renderdoc.qrenderdoc_path = "D:\\RenderDoc\\qrenderdoc.exe"
+            return True
+
+    class FakeMcpInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def runtime_executable(self):
+            return exe
+
+    monkeypatch.setattr("rdc_auto.operations.RenderDocInstaller", FakeRenderDocInstaller)
+    monkeypatch.setattr("rdc_auto.operations.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.operations.is_process_running", lambda image_name: image_name == "qrenderdoc.exe")
+    monkeypatch.setattr("rdc_auto.operations.patch_renderdoc_mcp_extension", lambda path: True)
+
+    with pytest.raises(UserActionRequired, match="Close all RenderDoc windows"):
+        start_mcp(OperationContext(config=None))
+
+    saved = load_config()
+    assert saved.mcp.executable_path == str(exe)
+    assert saved.mcp.extension_patch_restart_required is True
