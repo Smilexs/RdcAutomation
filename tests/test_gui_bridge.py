@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rdc_auto.config import AppConfig
+from rdc_auto.gui.bridge import GuiBridge
 from rdc_auto.gui.status import build_status_snapshot
 
 
@@ -42,3 +43,31 @@ def test_build_status_snapshot_masks_saved_ai_api_key():
 
     assert snapshot["ai"]["api_key_saved"] is True
     assert snapshot["config_preview"]["ai"]["api_key"] == "********"
+
+
+def test_bridge_get_status_returns_envelope(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.get_status({})
+
+    assert response["ok"] is True
+    assert "renderdoc" in response["data"]
+    assert response["logs"] == []
+
+
+def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_environment(
+        {
+            "renderdoc_path": "C:\\Program Files\\RenderDoc\\qrenderdoc.exe",
+            "mumu_root": "D:\\MuMu",
+            "vm_index": "1",
+            "graphics_api": "vulkan",
+        }
+    )
+
+    assert response["ok"] is True
+    assert response["data"]["mumu"]["vm_index"] == "1"
