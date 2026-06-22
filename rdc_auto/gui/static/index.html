@@ -1739,6 +1739,24 @@
           if (response.ok) toast("AI test", "Local GUI mode is available.");
           return;
         }
+        if (action === "choose-mumu") {
+          return callBackend("choose_directory", { initial_dir: $("#mumuRoot")?.value || "" }).then((response) => {
+            if (response.ok && response.data.path) setInputValue("mumuRoot", response.data.path);
+          });
+        }
+        if (action === "choose-capture-out") {
+          return callBackend("choose_directory", { initial_dir: $("#captureOut")?.value || "" }).then((response) => {
+            if (response.ok && response.data.path) setInputValue("captureOut", response.data.path);
+          });
+        }
+        if (action === "choose-rdc") {
+          return callBackend("choose_file", {}).then((response) => {
+            if (response.ok && response.data.path) {
+              setInputValue("rdcPath", response.data.path);
+              setInputValue("eidRdcPath", response.data.path);
+            }
+          });
+        }
       }
       switch (action) {
         case "refresh-status":

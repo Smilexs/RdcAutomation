@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 from rdc_auto.config import AppConfig, load_config
 from rdc_auto.errors import UserActionRequired
 from rdc_auto.gui.bridge import GuiBridge
@@ -161,3 +164,29 @@ def test_bridge_open_path_empty_payload_returns_error_without_opening(monkeypatc
 
     assert response["ok"] is False
     assert opened == []
+
+
+class FakeWindow:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def create_file_dialog(self, dialog_type, **kwargs):
+        self.calls.append((dialog_type, kwargs))
+        return self.result
+
+
+def test_choose_directory_uses_window_dialog(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(FOLDER_DIALOG="folder", OPEN_DIALOG="open"),
+    )
+    bridge = GuiBridge(run_jobs_inline=True)
+    bridge.bind_window(FakeWindow([str(tmp_path)]))
+
+    response = bridge.choose_directory({"initial_dir": str(tmp_path)})
+
+    assert response["ok"] is True
+    assert response["data"]["path"] == str(tmp_path)

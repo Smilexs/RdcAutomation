@@ -54,6 +54,15 @@ def test_gui_index_routes_mcp_actions_to_mcp_progress():
     assert 'return "#mcpProgress"' in html
 
 
+def test_gui_index_routes_choose_actions_to_backend_dialogs():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'action === "choose-mumu"' in html
+    assert 'callBackend("choose_directory"' in html
+    assert 'action === "choose-rdc"' in html
+    assert 'callBackend("choose_file"' in html
+
+
 def test_build_window_options_points_to_packaged_index(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
 
