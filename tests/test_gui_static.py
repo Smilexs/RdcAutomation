@@ -66,6 +66,14 @@ def test_gui_index_routes_choose_actions_to_backend_dialogs():
     assert "state.lastRdcPath = response.data.path" in html
 
 
+def test_gui_index_routes_eid_actions_to_backend():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'callBackend("load_eid_list"' in html
+    assert 'callBackend("export_eid_model"' in html
+    assert 'callBackend("export_eid_textures"' in html
+
+
 def test_build_window_options_points_to_packaged_index(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
 

@@ -166,6 +166,65 @@ def test_bridge_open_path_empty_payload_returns_error_without_opening(monkeypatc
     assert opened == []
 
 
+def test_bridge_load_eid_list_returns_rows(monkeypatch, tmp_path):
+    class FakeExportService:
+        def __init__(self, mcp):
+            self.mcp = mcp
+
+        def list_draw_calls(self, rdc_path):
+            assert self.mcp == "mcp"
+            assert rdc_path == str(tmp_path / "capture.rdc")
+            return [{"event_id": 1203, "name": "Character.Draw"}]
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", lambda: "cfg")
+    monkeypatch.setattr("rdc_auto.gui.bridge.mcp_client", lambda cfg: "mcp")
+    monkeypatch.setattr("rdc_auto.gui.bridge.ExportService", FakeExportService)
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.load_eid_list({"rdc_path": str(tmp_path / "capture.rdc")})
+
+    assert response["ok"] is True
+    assert response["data"] == {"rows": [{"event_id": 1203, "name": "Character.Draw"}]}
+    assert response["logs"] == ["loaded 1 EID rows"]
+
+
+def test_bridge_export_eid_model_returns_error_for_invalid_event_id(tmp_path):
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.export_eid_model(
+        {"rdc_path": str(tmp_path / "capture.rdc"), "output_dir": str(tmp_path / "out"), "event_id": "abc"}
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "ValueError"
+
+
+def test_bridge_export_eid_textures_returns_result(monkeypatch, tmp_path):
+    class FakeExportService:
+        def __init__(self, mcp):
+            self.mcp = mcp
+
+        def export_bound_textures_for_event(self, rdc_path, output_dir, event_id):
+            assert self.mcp == "mcp"
+            assert rdc_path == str(tmp_path / "capture.rdc")
+            assert output_dir == str(tmp_path / "out")
+            assert event_id == 1203
+            return {"event_id": 1203, "textures": [{"path": str(tmp_path / "out" / "a.png")}]}
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", lambda: "cfg")
+    monkeypatch.setattr("rdc_auto.gui.bridge.mcp_client", lambda cfg: "mcp")
+    monkeypatch.setattr("rdc_auto.gui.bridge.ExportService", FakeExportService)
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.export_eid_textures(
+        {"rdc_path": str(tmp_path / "capture.rdc"), "output_dir": str(tmp_path / "out"), "event_id": "1203"}
+    )
+
+    assert response["ok"] is True
+    assert response["data"] == {"event_id": 1203, "textures": [{"path": str(tmp_path / "out" / "a.png")}]}
+    assert response["logs"] == ["exported 1 textures for EID 1203"]
+
+
 class FakeWindow:
     def __init__(self, result):
         self.result = result

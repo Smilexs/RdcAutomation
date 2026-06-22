@@ -1236,7 +1236,7 @@
       logs: ["日志与配置", "查看模拟日志、配置摘要和原型状态。"],
     };
 
-    const eidRows = [
+    let eidRows = [
       { eid: 1203, name: "DrawIndexed / Character_Body", mesh: "是", textures: 4 },
       { eid: 1207, name: "DrawIndexed / Weapon_Main", mesh: "是", textures: 3 },
       { eid: 1214, name: "Draw / UI_Overlay", mesh: "否", textures: 2 },
@@ -1356,6 +1356,14 @@
         };
       }
       return {};
+    }
+
+    function collectEidParams() {
+      return {
+        rdc_path: $("#eidRdcPath")?.value || $("#rdcPath")?.value || "",
+        output_dir: $("#exportOut")?.value || "",
+        event_id: $("#eidInput")?.value || ""
+      };
     }
 
     function progressSelectorForAction(action) {
@@ -1768,6 +1776,39 @@
               applyDialogValue("#eidRdcPath", response.data.path);
             }
           });
+        }
+        if (action === "load-eid-list") {
+          const response = await callBackend("load_eid_list", {
+            rdc_path: $("#eidRdcPath")?.value || $("#rdcPath")?.value || ""
+          });
+          if (response.ok) {
+            const rows = response.data && response.data.rows ? response.data.rows : [];
+            eidRows = rows.map((row) => ({
+              eid: row.event_id || row.eventId || row.eid,
+              name: row.name || "",
+              mesh: "available",
+              textures: "requires MCP support"
+            }));
+            renderEidTable();
+            toast("EID list loaded", `Loaded ${eidRows.length} rows.`);
+          }
+          return;
+        }
+        if (action === "export-eid-model") {
+          const response = await callBackend("export_eid_model", collectEidParams());
+          if (response.ok) {
+            const objPath = response.data && response.data.obj_path ? response.data.obj_path : "";
+            toast("EID model exported", objPath || "Model export completed.");
+          }
+          return;
+        }
+        if (action === "export-eid-textures") {
+          const response = await callBackend("export_eid_textures", collectEidParams());
+          if (response.ok) {
+            const textures = response.data && response.data.textures ? response.data.textures : [];
+            toast("EID textures exported", `Exported ${textures.length} textures.`);
+          }
+          return;
         }
       }
       switch (action) {

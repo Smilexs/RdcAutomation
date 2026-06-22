@@ -7,6 +7,7 @@ from typing import Any
 
 from rdc_auto.config import load_config, save_config
 from rdc_auto.errors import UserActionRequired
+from rdc_auto.export_assets import ExportService
 from rdc_auto.gui.jobs import JobManager
 from rdc_auto.gui.status import build_status_snapshot
 from rdc_auto.operations import (
@@ -18,6 +19,7 @@ from rdc_auto.operations import (
     release_session,
     restart_mcp,
     setup_environment,
+    mcp_client,
     start_mcp,
     stop_mcp,
 )
@@ -137,6 +139,49 @@ class GuiBridge:
         try:
             payload = payload or {}
             return self._ok(self.jobs.get(str(payload.get("job_id", ""))))
+        except Exception as exc:
+            return self._fail(exc)
+
+    def load_eid_list(self, payload: dict | None = None) -> dict:
+        try:
+            payload = payload or {}
+            rdc_path = str(payload.get("rdc_path", "")).strip()
+            if not rdc_path:
+                raise ValueError("rdc_path is required.")
+            cfg = load_config()
+            rows = ExportService(mcp_client(cfg)).list_draw_calls(rdc_path)
+            return self._ok({"rows": rows}, logs=[f"loaded {len(rows)} EID rows"])
+        except Exception as exc:
+            return self._fail(exc)
+
+    def export_eid_model(self, payload: dict | None = None) -> dict:
+        try:
+            payload = payload or {}
+            rdc_path = str(payload.get("rdc_path", "")).strip()
+            output_dir = str(payload.get("output_dir", "")).strip()
+            event_id = int(payload.get("event_id"))
+            if not rdc_path:
+                raise ValueError("rdc_path is required.")
+            if not output_dir:
+                raise ValueError("output_dir is required.")
+            result = ExportService(mcp_client(load_config())).export_mesh_for_event(rdc_path, output_dir, event_id)
+            return self._ok(result, logs=[f"exported model for EID {event_id}"])
+        except Exception as exc:
+            return self._fail(exc)
+
+    def export_eid_textures(self, payload: dict | None = None) -> dict:
+        try:
+            payload = payload or {}
+            rdc_path = str(payload.get("rdc_path", "")).strip()
+            output_dir = str(payload.get("output_dir", "")).strip()
+            event_id = int(payload.get("event_id"))
+            if not rdc_path:
+                raise ValueError("rdc_path is required.")
+            if not output_dir:
+                raise ValueError("output_dir is required.")
+            result = ExportService(mcp_client(load_config())).export_bound_textures_for_event(rdc_path, output_dir, event_id)
+            texture_count = len(result.get("textures", []))
+            return self._ok(result, logs=[f"exported {texture_count} textures for EID {event_id}"])
         except Exception as exc:
             return self._fail(exc)
 

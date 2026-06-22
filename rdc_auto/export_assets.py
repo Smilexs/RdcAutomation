@@ -33,6 +33,64 @@ class ExportService:
     def __init__(self, mcp: McpCaller):
         self.mcp = mcp
 
+    def list_draw_calls(self, rdc_path: str | Path) -> list[dict]:
+        rows = []
+        draws = self.mcp.call("get_draw_calls", {"include_children": True, "only_actions": True}, timeout=60.0).get("draws", [])
+        for draw in draws:
+            try:
+                raw_event_id = draw["event_id"] if "event_id" in draw else draw.get("eventId")
+                event_id = _parse_event_id(raw_event_id)
+            except (AttributeError, ValueError):
+                continue
+            rows.append({"event_id": event_id, "name": str(draw.get("name") or f"draw_{event_id}")})
+        return rows
+
+    def export_mesh_for_event(self, rdc_path: str | Path, output_dir: str | Path, event_id: object) -> dict:
+        event_id = _parse_event_id(event_id)
+        rdc_path = Path(rdc_path)
+        output_dir = Path(output_dir)
+        meshes_dir = output_dir / "meshes"
+        raw_dir = output_dir / "raw_mesh_json"
+        meshes_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+
+        raw_json = raw_dir / f"{event_id}_eid.json"
+        obj = meshes_dir / f"{event_id}_eid.obj"
+        mtl = meshes_dir / f"{event_id}_eid.mtl"
+        self.mcp.call("open_capture", {"capture_path": str(rdc_path)}, timeout=120.0)
+        self.mcp.call(
+            "export_mesh_to_file",
+            {"event_id": event_id, "output_path": str(raw_json)},
+            timeout=120.0,
+        )
+        convert_mesh_json_to_obj(raw_json, obj, mtl, material_name=f"mat_{event_id}")
+        return {"event_id": event_id, "raw_json_path": str(raw_json), "obj_path": str(obj), "mtl_path": str(mtl)}
+
+    def export_bound_textures_for_event(self, rdc_path: str | Path, output_dir: str | Path, event_id: object) -> dict:
+        event_id = _parse_event_id(event_id)
+        rdc_path = Path(rdc_path)
+        output_dir = Path(output_dir)
+        textures_dir = output_dir / "textures" / f"eid_{event_id}"
+        textures_dir.mkdir(parents=True, exist_ok=True)
+
+        self.mcp.call("open_capture", {"capture_path": str(rdc_path)}, timeout=120.0)
+        response = self.mcp.call("get_bound_textures", {"event_id": event_id}, timeout=60.0)
+        textures = response.get("textures", response.get("bound_textures", []))
+        exported = []
+        for index, texture in enumerate(textures, start=1):
+            resource_id = str(texture.get("resource_id") or texture.get("resourceId") or texture.get("id") or "")
+            if not resource_id:
+                continue
+            name = str(texture.get("name") or f"texture_{index}")
+            path = textures_dir / f"{safe_name(name)}_{safe_name(resource_id)}.png"
+            self.mcp.call(
+                "export_texture_to_file",
+                {"resource_id": resource_id, "output_path": str(path), "file_type": "PNG"},
+                timeout=120.0,
+            )
+            exported.append({"resource_id": resource_id, "name": name, "path": str(path)})
+        return {"event_id": event_id, "textures": exported}
+
     def export(self, rdc_path: str | Path, output_dir: str | Path, assets: str) -> dict:
         if assets not in {"textures", "meshes", "both"}:
             raise ValueError(f"unsupported asset type: {assets}")

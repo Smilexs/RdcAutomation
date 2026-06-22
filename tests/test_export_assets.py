@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -198,3 +199,67 @@ def test_export_sanitizes_texture_resource_id_only_for_filename(tmp_path):
     assert texture_call[1]["resource_id"] == "folder/101"
     assert texture_call[1]["output_path"] == str(tmp_path / "out" / "textures" / "Albedo_folder_101.png")
     assert not (tmp_path / "out" / "textures" / "Albedo_folder").exists()
+
+
+def test_list_draw_calls_returns_event_rows(tmp_path):
+    class FakeMcp:
+        def call(self, method, params=None, timeout=None):
+            assert method == "get_draw_calls"
+            return {"draws": [{"event_id": 1203, "name": "Character.Draw"}]}
+
+    rows = ExportService(FakeMcp()).list_draw_calls(tmp_path / "capture.rdc")
+
+    assert rows == [{"event_id": 1203, "name": "Character.Draw"}]
+
+
+def test_export_mesh_for_event_writes_obj(tmp_path):
+    class FakeMcp:
+        def call(self, method, params=None, timeout=None):
+            if method == "open_capture":
+                return {}
+            if method == "export_mesh_to_file":
+                Path(params["output_path"]).write_text(
+                    '{"indices":[0,1,2],"position":[[0,0,0],[1,0,0],[0,1,0]]}',
+                    encoding="utf-8",
+                )
+                return {"output_path": params["output_path"]}
+            raise AssertionError(method)
+
+    result = ExportService(FakeMcp()).export_mesh_for_event(tmp_path / "capture.rdc", tmp_path / "out", 1203)
+
+    assert result["event_id"] == 1203
+    assert Path(result["obj_path"]).is_file()
+
+
+def test_export_bound_textures_for_event_uses_safe_texture_filenames(tmp_path):
+    class FakeMcp:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, method, params=None, timeout=None):
+            params = params or {}
+            self.calls.append((method, params, timeout))
+            if method == "open_capture":
+                return {}
+            if method == "get_bound_textures":
+                return {"textures": [{"resource_id": "folder/101", "name": "Albedo/Base"}]}
+            if method == "export_texture_to_file":
+                Path(params["output_path"]).write_text("png", encoding="utf-8")
+                return {"output_path": params["output_path"]}
+            raise AssertionError(method)
+
+    mcp = FakeMcp()
+    result = ExportService(mcp).export_bound_textures_for_event(tmp_path / "capture.rdc", tmp_path / "out", 1203)
+
+    texture_call = [call for call in mcp.calls if call[0] == "export_texture_to_file"][0]
+    assert result["event_id"] == 1203
+    assert result["textures"] == [
+        {
+            "resource_id": "folder/101",
+            "name": "Albedo/Base",
+            "path": str(tmp_path / "out" / "textures" / "eid_1203" / "Albedo_Base_folder_101.png"),
+        }
+    ]
+    assert texture_call[1]["resource_id"] == "folder/101"
+    assert texture_call[1]["output_path"] == str(tmp_path / "out" / "textures" / "eid_1203" / "Albedo_Base_folder_101.png")
+    assert (tmp_path / "out" / "textures" / "eid_1203" / "Albedo_Base_folder_101.png").is_file()
