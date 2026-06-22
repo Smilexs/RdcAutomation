@@ -47,6 +47,7 @@ class CaptureConfig:
     last_output_dir: str = ""
     last_rdc_path: str = ""
     active_session_id: str | None = None
+    active_launch_id: str = ""
     active_pid: int | None = None
     active_session_started_at: str | None = None
 
