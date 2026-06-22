@@ -1315,6 +1315,17 @@
       if (node && value !== undefined && value !== null && value !== "") node.value = value;
     }
 
+    function applyDialogValue(selector, value, options) {
+      const node = $(selector);
+      if (!node || value === undefined || value === null || value === "") return;
+      options = options || {};
+      node.value = value;
+      state.backendConfigPreview = null;
+      if (options.updateLastRdc) state.lastRdcPath = value;
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      updateStatus();
+    }
+
     function setProgressValue(selector, value, active) {
       const progress = selector ? $(selector) : null;
       if (!progress) return;
@@ -1741,19 +1752,20 @@
         }
         if (action === "choose-mumu") {
           return callBackend("choose_directory", { initial_dir: $("#mumuRoot")?.value || "" }).then((response) => {
-            if (response.ok && response.data.path) setInputValue("mumuRoot", response.data.path);
+            if (response.ok && response.data && response.data.path) applyDialogValue("#mumuRoot", response.data.path);
           });
         }
         if (action === "choose-capture-out") {
           return callBackend("choose_directory", { initial_dir: $("#captureOut")?.value || "" }).then((response) => {
-            if (response.ok && response.data.path) setInputValue("captureOut", response.data.path);
+            if (response.ok && response.data && response.data.path) applyDialogValue("#captureOut", response.data.path);
           });
         }
         if (action === "choose-rdc") {
           return callBackend("choose_file", {}).then((response) => {
-            if (response.ok && response.data.path) {
-              setInputValue("rdcPath", response.data.path);
-              setInputValue("eidRdcPath", response.data.path);
+            if (response.ok && response.data && response.data.path) {
+              state.lastRdcPath = response.data.path;
+              applyDialogValue("#rdcPath", response.data.path, { updateLastRdc: true });
+              applyDialogValue("#eidRdcPath", response.data.path);
             }
           });
         }
