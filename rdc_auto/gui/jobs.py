@@ -4,6 +4,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from copy import deepcopy
 
 
 JobCallable = Callable[[Callable[[str, int], None]], dict]
@@ -30,7 +31,7 @@ class JobManager:
         }
         with self._lock:
             self._jobs[job_id] = job
-            initial = dict(job)
+            initial = self._snapshot(job)
         if self.run_inline:
             self._run(job_id, fn)
         else:
@@ -42,6 +43,7 @@ class JobManager:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
+                now = time.time()
                 return {
                     "job_id": job_id,
                     "action": "",
@@ -50,8 +52,10 @@ class JobManager:
                     "logs": [],
                     "result": None,
                     "error": {"type": "JobMissing", "message": f"Unknown job: {job_id}"},
+                    "created_at": now,
+                    "updated_at": now,
                 }
-            return dict(job)
+            return self._snapshot(job)
 
     def _run(self, job_id: str, fn: JobCallable) -> None:
         self._update(job_id, state="running", progress=1)
@@ -83,3 +87,11 @@ class JobManager:
             job = self._jobs[job_id]
             job.update(changes)
             job["updated_at"] = time.time()
+
+    def _snapshot(self, job: dict) -> dict:
+        return {
+            **job,
+            "logs": list(job["logs"]),
+            "result": deepcopy(job["result"]),
+            "error": deepcopy(job["error"]),
+        }

@@ -29,3 +29,29 @@ def test_job_manager_records_failure():
     assert current["error"]["type"] == "ValueError"
     assert current["error"]["message"] == "bad input"
     assert current["logs"] == ["starting"]
+
+
+def test_job_manager_missing_job_includes_timestamps():
+    manager = JobManager(run_inline=True)
+
+    current = manager.get("unknown")
+
+    assert current["state"] == "missing"
+    assert isinstance(current["created_at"], float)
+    assert isinstance(current["updated_at"], float)
+
+
+def test_job_manager_start_returns_detached_queued_snapshot():
+    manager = JobManager(run_inline=True)
+
+    def run(emit):
+        emit("starting", 10)
+        return {"value": 7}
+
+    job = manager.start("sample", run)
+    current = manager.get(job["job_id"])
+
+    assert job["state"] == "queued"
+    assert job["logs"] == []
+    assert current["state"] == "succeeded"
+    assert current["logs"] == ["starting"]
