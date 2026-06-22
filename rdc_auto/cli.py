@@ -214,6 +214,7 @@ def _sync_operations_hooks() -> None:
     _operations.canonical_mumu_root = canonical_mumu_root
     _operations.validate_mumu_root = validate_mumu_root
     _operations.prompt_path = prompt_path
+    _operations.save_config = save_config
     _operations.count_processes = _process_count
     _operations.is_process_running = _process_is_running
     _operations.terminate_process_tree = _terminate_process_tree

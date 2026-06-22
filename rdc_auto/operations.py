@@ -3,13 +3,13 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
 from .capture import CaptureService
 from .capture_bridge import CaptureBridgeClient, CaptureBridgeInstaller
-from .config import AppConfig, load_config
+from .config import AppConfig, load_config, save_config
 from .emulator import MuMu12
 from .errors import DependencyMissing, McpCapabilityMissing, RdcAutoError, UserActionRequired
 from .export_assets import ExportService
@@ -36,6 +36,9 @@ class OperationContext:
         if self.progress is not None:
             self.progress(message, percent)
 
+    def save(self) -> None:
+        save_config(self.cfg())
+
 
 def setup_environment(ctx: OperationContext) -> None:
     cfg = ctx.cfg()
@@ -56,20 +59,20 @@ def setup_environment(ctx: OperationContext) -> None:
     mcp_exe = mcp.ensure_installed()
     cfg.mcp.executable_path = str(mcp_exe)
     ctx.emit("setup complete", 100)
+    ctx.save()
 
 
 def check_environment(ctx: OperationContext) -> dict:
     cfg = ctx.cfg()
+    before = asdict(cfg)
     renderdoc_installed = RenderDocInstaller(cfg).ensure_installed()
     mcp_executable = ""
     mcp_installed = False
-    try:
-        mcp_exe = McpInstaller(cfg).runtime_executable()
+    mcp_exe = McpInstaller(cfg).discover_executable(allow_configured=True)
+    if mcp_exe:
         cfg.mcp.executable_path = str(mcp_exe)
         mcp_executable = str(mcp_exe)
         mcp_installed = True
-    except (FileNotFoundError, ValueError):
-        mcp_installed = False
 
     mumu_executable = ""
     mumu_configured = False
@@ -79,6 +82,9 @@ def check_environment(ctx: OperationContext) -> dict:
             mumu_configured = True
         except FileNotFoundError:
             mumu_configured = False
+
+    if asdict(cfg) != before:
+        ctx.save()
 
     return {
         "renderdoc_installed": renderdoc_installed,
@@ -99,18 +105,23 @@ def attach(ctx: OperationContext, force: bool, confirm_vulkan: bool, vm_index: s
     service = CaptureService(cfg, capture_bridge_client(cfg, start_qrenderdoc=True), MuMu12(cfg))
     launch_id = service.attach(force=force, confirm_vulkan=confirm_vulkan)
     cfg.capture.active_launch_id = launch_id
+    ctx.save()
     return launch_id
 
 
 def capture(ctx: OperationContext, output_dir: str | Path, timeout_seconds: int) -> Path:
     cfg = ctx.cfg()
     service = CaptureService(cfg, capture_bridge_client(cfg, start_qrenderdoc=False), MuMu12(cfg))
-    return service.capture(output_dir, timeout_seconds=timeout_seconds)
+    rdc_path = service.capture(output_dir, timeout_seconds=timeout_seconds)
+    ctx.save()
+    return rdc_path
 
 
 def export_assets(ctx: OperationContext, rdc_path: str | Path, output_dir: str | Path, assets: str) -> dict:
     cfg = ctx.cfg()
-    return ExportService(mcp_client(cfg)).export(rdc_path, output_dir, assets)
+    manifest = ExportService(mcp_client(cfg)).export(rdc_path, output_dir, assets)
+    ctx.save()
+    return manifest
 
 
 def release_session(ctx: OperationContext) -> None:
@@ -119,14 +130,19 @@ def release_session(ctx: OperationContext) -> None:
     cfg.capture.active_launch_id = ""
     cfg.capture.active_pid = None
     cfg.capture.active_session_started_at = None
+    ctx.save()
 
 
 def start_mcp(ctx: OperationContext) -> FileIpcMcpClient:
-    return mcp_client(ctx.cfg())
+    client = mcp_client(ctx.cfg())
+    ctx.save()
+    return client
 
 
 def stop_mcp(ctx: OperationContext) -> None:
     cfg = ctx.cfg()
+    if cfg.capture.active_session_id or cfg.capture.active_launch_id:
+        raise UserActionRequired("Active capture session exists. Release the session before stopping MCP.")
     executable_path = cfg.mcp.executable_path or "RenderDocMCP.exe"
     stop_standalone_mcp_bridge(executable_path)
     if is_process_running("qrenderdoc.exe"):
@@ -137,7 +153,9 @@ def stop_mcp(ctx: OperationContext) -> None:
 
 def restart_mcp(ctx: OperationContext) -> FileIpcMcpClient:
     stop_mcp(ctx)
-    return start_mcp(ctx)
+    client = start_mcp(ctx)
+    ctx.save()
+    return client
 
 
 def mcp_client(cfg: AppConfig, require_capture_connect: bool = False) -> FileIpcMcpClient:
@@ -317,4 +335,4 @@ def _wait_for_process_exit(image_name: str, timeout_seconds: float) -> None:
         if count_processes(image_name) == 0:
             return
         time.sleep(0.1)
-    raise RdcAutoError(f"Timed out waiting for stale RenderDocMCP bridge process to exit: {image_name}")
+    raise RdcAutoError(f"Timed out waiting for process to exit: {image_name}")

@@ -53,7 +53,7 @@ def terminate_process_tree(image_name: str, runner: Runner = subprocess.run) -> 
         return
     if result.returncode != 0 and count_processes(image_name, runner=runner) > 0:
         details = "\n".join(part for part in [result.stderr, result.stdout] if part).strip()
-        raise RdcAutoError(f"Failed to stop stale RenderDocMCP bridge process {image_name}: {details}")
+        raise RdcAutoError(f"Failed to stop process {image_name}: {details}")
 
 
 def executable_name(path: str | Path) -> str:
