@@ -13,6 +13,9 @@ dev = [
   "pytest>=8.0",
   "pyinstaller>=6.0"
 ]
+gui = [
+  "pywebview>=6,<7"
+]
 
 [build-system]
 requires = ["hatchling"]

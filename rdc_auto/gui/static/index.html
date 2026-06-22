@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RdcAutomation GUI Prototype</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8dee8;
+      --nav: #111827;
+      --nav-soft: #1f2937;
+      --blue: #2563eb;
+      --teal: #0f766e;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
+      color-scheme: light;
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      padding: 28px 20px;
+      background: var(--nav);
+      color: #f9fafb;
+    }
+
+    .brand {
+      padding: 2px 8px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .brand-subtitle {
+      margin: 8px 0 0;
+      color: #aab2c2;
+      font-size: 13px;
+    }
+
+    .nav {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nav-button {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 8px;
+      color: #d1d5db;
+      background: transparent;
+      text-align: left;
+    }
+
+    .nav-button:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+
+    .nav-button.active {
+      color: var(--nav);
+      background: #ffffff;
+    }
+
+    .nav-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.12);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .nav-button.active .nav-icon {
+      color: #ffffff;
+      background: var(--blue);
+    }
+
+    .side-note {
+      margin-top: auto;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: var(--nav-soft);
+    }
+
+    .side-note strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 15px;
+    }
+
+    .side-note span {
+      display: block;
+      color: #aab2c2;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+      padding: 28px 32px 24px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 20px;
+      align-items: start;
+      margin-bottom: 22px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .page-description {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      max-width: 620px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      gap: 8px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: #344054;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.ok { background: var(--green); }
+    .dot.warn { background: var(--amber); }
+    .dot.bad { background: var(--red); }
+    .dot.info { background: var(--teal); }
+
+    .view {
+      display: none;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 22px 12px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    .panel-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .panel-body {
+      padding: 16px 22px 22px;
+    }
+
+    .workflow {
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+    }
+
+    .step {
+      display: grid;
+      gap: 12px;
+      min-height: 178px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+
+    .step-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .step-num {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      color: white;
+      background: var(--blue);
+      font-weight: 700;
+    }
+
+    .step-title {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .step-copy {
+      margin: 0;
+      min-height: 44px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      min-height: 40px;
+      padding: 0 15px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #ffffff;
+      background: var(--blue);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      filter: brightness(0.96);
+    }
+
+    .btn.secondary {
+      color: var(--blue);
+      border-color: #c7d2fe;
+      background: #eef2ff;
+    }
+
+    .btn.neutral {
+      color: #344054;
+      border-color: var(--line);
+      background: #ffffff;
+    }
+
+    .btn.success { background: var(--green); }
+    .btn.teal { background: var(--teal); }
+    .btn.warn { background: var(--amber); }
+    .btn.danger { background: var(--red); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .form-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    .form-row.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      color: #475467;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #ffffff;
+      outline: 0;
+    }
+
+    textarea {
+      min-height: 98px;
+      resize: vertical;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .checkline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #475467;
+      font-size: 14px;
+    }
+
+    .checkline input {
+      width: 18px;
+      min-height: 18px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      color: #475467;
+      background: #f8fafc;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      min-height: 38px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #344054;
+      background: #ffffff;
+      font-weight: 700;
+    }
+
+    .tab.active {
+      color: #ffffff;
+      border-color: var(--blue);
+      background: var(--blue);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .result-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 58px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+
+    .result-main {
+      min-width: 0;
+    }
+
+    .result-main strong,
+    .result-main span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .result-main span {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .progress {
+      display: none;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e5e7eb;
+    }
+
+    .progress.active {
+      display: block;
+    }
+
+    .progress span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+      transition: width 0.25s ease;
+    }
+
+    .chat-box {
+      display: grid;
+      gap: 12px;
+      min-height: 320px;
+      max-height: 360px;
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+
+    .message {
+      max-width: 78%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .message.user {
+      justify-self: end;
+      color: #0f172a;
+      background: #dbeafe;
+    }
+
+    .message.ai {
+      justify-self: start;
+      background: #ffffff;
+      border: 1px solid var(--line);
+    }
+
+    .log-panel {
+      margin-top: 22px;
+      border-radius: 8px;
+      background: #0b1220;
+      color: #e5e7eb;
+      overflow: hidden;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .log-title {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+
+    .log-lines {
+      min-height: 120px;
+      max-height: 180px;
+      overflow: auto;
+      padding: 12px 16px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .linkish {
+      border: 0;
+      color: #93c5fd;
+      background: transparent;
+    }
+
+    .toast-root {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 10;
+      display: grid;
+      gap: 10px;
+      width: min(420px, calc(100vw - 44px));
+    }
+
+    .toast {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+
+    .toast strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.46);
+    }
+
+    .modal-backdrop.active {
+      display: grid;
+    }
+
+    .modal {
+      width: min(520px, 100%);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+    }
+
+    .modal-body {
+      padding: 22px;
+    }
+
+    .modal-title {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    .modal-copy {
+      margin: 12px 0 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 0 22px 22px;
+    }
+
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .grid.two,
+      .grid.three,
+      .workflow,
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .status-row {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        min-height: auto;
+      }
+
+      .main {
+        padding: 22px 16px;
+      }
+
+      .nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .side-note {
+        display: none;
+      }
+
+      .result-item {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1 class="brand-title">RdcAutomation</h1>
+        <p class="brand-subtitle">RenderDoc Capture Suite</p>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-button active" data-view-target="dashboard"><span class="nav-icon">◎</span><span>工作台</span></button>
+        <button class="nav-button" data-view-target="environment"><span class="nav-icon">⚙</span><span>环境设置</span></button>
+        <button class="nav-button" data-view-target="capture"><span class="nav-icon">◉</span><span>捕捉 RDC</span></button>
+        <button class="nav-button" data-view-target="export"><span class="nav-icon">↓</span><span>资源导出</span></button>
+        <button class="nav-button" data-view-target="assistant"><span class="nav-icon">AI</span><span>AI 助手</span></button>
+        <button class="nav-button" data-view-target="logs"><span class="nav-icon">▣</span><span>日志与配置</span></button>
+      </nav>
+
+      <div class="side-note">
+        <strong>静态原型</strong>
+        <span>当前页面只模拟交互，不会执行 rdc-auto 命令，也不会读写本机配置。</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 class="page-title" id="pageTitle">工作台</h2>
+          <p class="page-description" id="pageDescription">按 setup -> attach -> capture -> export 完成 RDC 捕捉与资源导出。</p>
+        </div>
+        <div class="status-row" aria-label="运行状态">
+          <span class="status-pill"><span class="dot ok" id="renderdocDot"></span><span id="renderdocStatus">RenderDoc 1.44</span></span>
+          <span class="status-pill"><span class="dot info" id="mumuDot"></span><span id="mumuStatus">MuMu12 已配置</span></span>
+          <span class="status-pill"><span class="dot warn" id="sessionDot"></span><span id="sessionStatus">未 attach</span></span>
+          <span class="status-pill"><span class="dot ok" id="mcpDot"></span><span id="mcpStatus">MCP v1.0.0 就绪</span></span>
+          <button class="btn secondary" data-action="refresh-status">刷新状态</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-dashboard">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">快速流程</h3>
+                <p class="panel-subtitle">面向普通用户的一键式操作入口。</p>
+              </div>
+              <button class="btn neutral" data-view-target="logs">查看日志</button>
+            </div>
+            <div class="panel-body">
+              <div class="grid workflow">
+                <article class="step">
+                  <div class="step-top"><span class="step-num" style="background: var(--teal);">1</span><p class="step-title">环境检查/安装</p></div>
+                  <p class="step-copy">检测 RenderDoc、RenderDocMCP、MuMu12 根目录。</p>
+                  <button class="btn teal" data-view-target="environment">开始</button>
+                </article>
+                <article class="step">
+                  <div class="step-top"><span class="step-num">2</span><p class="step-title">Attach 模拟器</p></div>
+                  <p class="step-copy">模拟启动 RenderDoc 控制的 MuMu12 会话。</p>
+                  <button class="btn" data-action="quick-attach">开始</button>
+                </article>
+                <article class="step">
+                  <div class="step-top"><span class="step-num" style="background: var(--amber);">3</span><p class="step-title">捕捉 RDC</p></div>
+                  <p class="step-copy">保存当前模拟器画面到一个 RDC 文件。</p>
+                  <button class="btn warn" data-action="quick-capture">开始</button>
+                </article>
+                <article class="step">
+                  <div class="step-top"><span class="step-num" style="background: var(--green);">4</span><p class="step-title">导出资源</p></div>
+                  <p class="step-copy">导出贴图 PNG、模型 OBJ/MTL 或指定 EID。</p>
+                  <button class="btn success" data-view-target="export">开始</button>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="grid two">
+            <div class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">最近 RDC 文件</h3>
+                  <p class="panel-subtitle">点击按钮会跳到导出页并填入示例路径。</p>
+                </div>
+              </div>
+              <div class="panel-body result-list" id="recentRdcList"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">任务结果</h3>
+                  <p class="panel-subtitle">用于模拟 manifest 摘要。</p>
+                </div>
+              </div>
+              <div class="panel-body result-list" id="summaryList"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-environment">
+        <div class="grid">
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">RenderDoc</h3>
+                  <p class="panel-subtitle">对应原 rdc-auto setup 中的 RenderDoc 检测与修复入口。</p>
+                </div>
+              </div>
+              <div class="panel-body grid">
+                <div class="form-grid">
+                  <div class="form-row full">
+                    <label for="renderdocPath">qrenderdoc.exe 路径</label>
+                    <input id="renderdocPath" value="C:\Program Files\RenderDoc\qrenderdoc.exe" />
+                  </div>
+                </div>
+                <div class="toolbar">
+                  <button class="btn" data-action="check-env">检测环境</button>
+                  <button class="btn teal" data-action="install-env">安装/修复</button>
+                  <button class="btn neutral" data-action="open-settings">打开配置目录</button>
+                </div>
+                <div class="progress" id="envProgress"><span></span></div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">MuMu12 设置</h3>
+                  <p class="panel-subtitle">保存目录、VM Index 与 Vulkan 确认状态。</p>
+                </div>
+              </div>
+              <div class="panel-body grid">
+                <div class="form-grid">
+                  <div class="form-row full">
+                    <label for="mumuRoot">MuMu12 根目录</label>
+                    <input id="mumuRoot" value="D:\Program Files\Netease\MuMu" />
+                  </div>
+                  <div class="form-row">
+                    <label for="vmIndex">VM Index</label>
+                    <input id="vmIndex" value="0" />
+                  </div>
+                  <div class="form-row">
+                    <label for="graphicsApi">图形 API</label>
+                    <select id="graphicsApi">
+                      <option>Vulkan</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="checkline"><input type="checkbox" id="vulkanConfirmed" checked />我已确认 MuMu12 使用 Vulkan</label>
+                <div class="toolbar">
+                  <button class="btn secondary" data-action="choose-mumu">选择目录</button>
+                  <button class="btn success" data-action="save-env">保存配置</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">RenderDoc MCP</h3>
+              </div>
+            </div>
+            <div class="panel-body grid">
+              <div class="form-grid">
+                <div class="form-row full">
+                  <label for="mcpPath">RenderDocMCP 路径</label>
+                  <input id="mcpPath" value="%LOCALAPPDATA%\Programs\RenderDocMCP\RenderDocMCP.exe" />
+                </div>
+              </div>
+              <div class="toolbar">
+                <button class="btn success" data-action="save-mcp">保存 MCP 配置</button>
+                <button class="btn teal" data-action="install-mcp">安装/修复 MCP</button>
+                <button class="btn neutral" data-action="open-mcp-dir">打开 MCP 目录</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-capture">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Attach 模拟器</h3>
+                <p class="panel-subtitle">对应 rdc-auto attach。</p>
+              </div>
+            </div>
+            <div class="panel-body grid">
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="attachVmIndex">VM Index</label>
+                  <input id="attachVmIndex" value="0" />
+                </div>
+                <div class="form-row">
+                  <label for="attachMode">启动策略</label>
+                  <select id="attachMode">
+                    <option>复用 RenderDoc 窗口</option>
+                    <option>重新启动 RenderDoc</option>
+                  </select>
+                </div>
+              </div>
+              <label class="checkline"><input type="checkbox" id="attachVulkan" checked />已确认 Vulkan</label>
+              <label class="checkline"><input type="checkbox" id="forceCloseMumu" />MuMu 已运行时允许强制关闭</label>
+              <div class="toolbar">
+                <button class="btn" data-action="attach">Attach 模拟器</button>
+                <button class="btn neutral" data-action="release-session">释放会话</button>
+              </div>
+              <div class="progress" id="attachProgress"><span></span></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">捕捉 RDC</h3>
+                <p class="panel-subtitle">对应 rdc-auto capture。</p>
+              </div>
+            </div>
+            <div class="panel-body grid">
+              <div class="form-grid">
+                <div class="form-row full">
+                  <label for="captureOut">输出目录</label>
+                  <input id="captureOut" value="D:\RdcCaptures" />
+                </div>
+                <div class="form-row">
+                  <label for="captureTimeout">超时时间</label>
+                  <input id="captureTimeout" value="60" />
+                </div>
+              </div>
+              <div class="toolbar">
+                <button class="btn warn" data-action="capture">捕捉当前帧</button>
+                <button class="btn secondary" data-action="choose-capture-out">选择目录</button>
+              </div>
+              <div class="progress" id="captureProgress"><span></span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-export">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">RenderDoc MCP</h3>
+                <p class="panel-subtitle">导出资源前确认 MCP 运行状态，可在此启动、关闭或重新检测。</p>
+              </div>
+              <div class="toolbar">
+                <button class="btn secondary" data-action="check-mcp">检测 MCP</button>
+                <button class="btn" data-action="start-mcp">启动 MCP</button>
+                <button class="btn neutral" data-action="stop-mcp">关闭 MCP</button>
+                <button class="btn neutral" data-action="restart-mcp">重启</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="grid three">
+                <div class="result-item">
+                  <div class="result-main">
+                    <strong id="exportMcpStatus">MCP 已就绪</strong>
+                    <span>资源导出依赖状态</span>
+                  </div>
+                  <span class="status-pill"><span class="dot ok" id="exportMcpDot"></span><span id="exportMcpPill">运行中</span></span>
+                </div>
+                <div class="result-item">
+                  <div class="result-main">
+                    <strong id="exportMcpVersion">v1.0.0</strong>
+                    <span>当前版本</span>
+                  </div>
+                  <button class="btn neutral" data-view-target="environment">环境设置</button>
+                </div>
+                <div class="result-item">
+                  <div class="result-main">
+                    <strong id="exportMcpExtension">扩展已加载</strong>
+                    <span>qrenderdoc Python extension</span>
+                  </div>
+                  <button class="btn neutral" data-action="open-mcp-dir">打开目录</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">资源导出</h3>
+              <p class="panel-subtitle">普通导出、指定 EID 模型导出、指定 EID 贴图导出均为前端模拟。</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="tabs">
+              <button class="tab active" data-tab-target="normal-export">普通导出</button>
+              <button class="tab" data-tab-target="eid-export">高级 EID</button>
+            </div>
+
+            <div class="tab-panel active" id="tab-normal-export">
+              <div class="grid">
+                <div class="form-grid">
+                  <div class="form-row full">
+                    <label for="rdcPath">RDC 文件</label>
+                    <input id="rdcPath" value="D:\RdcCaptures\mumu12_20260617_160827.rdc" />
+                  </div>
+                  <div class="form-row">
+                    <label for="assetType">导出类型</label>
+                    <select id="assetType">
+                      <option value="both">贴图 + 模型</option>
+                      <option value="textures">仅贴图</option>
+                      <option value="meshes">仅模型</option>
+                    </select>
+                  </div>
+                  <div class="form-row">
+                    <label for="exportOut">输出目录</label>
+                    <input id="exportOut" value="D:\RdcExports" />
+                  </div>
+                </div>
+                <div class="toolbar">
+                  <button class="btn success" data-action="export">开始导出</button>
+                  <button class="btn secondary" data-action="choose-rdc">选择 RDC</button>
+                  <button class="btn neutral" data-action="open-export-out">打开导出目录</button>
+                </div>
+                <div class="progress" id="exportProgress"><span></span></div>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="tab-eid-export">
+              <div class="grid">
+                <div class="form-grid">
+                  <div class="form-row">
+                    <label for="eidInput">手动输入 EID</label>
+                    <input id="eidInput" value="1203" />
+                  </div>
+                  <div class="form-row">
+                    <label for="eidRdcPath">RDC 文件</label>
+                    <input id="eidRdcPath" value="D:\RdcCaptures\mumu12_20260617_160827.rdc" />
+                  </div>
+                </div>
+                <div class="toolbar">
+                  <button class="btn" data-action="load-eid-list">读取 DrawCall / EID 列表</button>
+                  <button class="btn teal" data-action="export-eid-model">导出该 EID 模型</button>
+                  <button class="btn success" data-action="export-eid-textures">导出该 EID 绑定贴图</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>EID</th>
+                        <th>DrawCall</th>
+                        <th>模型</th>
+                        <th>绑定贴图</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="eidTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-assistant">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">AI 配置</h3>
+                <p class="panel-subtitle">只保存到前端内存，刷新页面后恢复示例值。</p>
+              </div>
+            </div>
+            <div class="panel-body grid">
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="aiProvider">Provider</label>
+                  <select id="aiProvider">
+                    <option>OpenAI Compatible</option>
+                    <option>自定义 HTTP 服务</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="aiModel">Model</label>
+                  <input id="aiModel" value="gpt-4.1-mini" />
+                </div>
+                <div class="form-row full">
+                  <label for="aiBaseUrl">API Base URL</label>
+                  <input id="aiBaseUrl" value="https://api.openai.com/v1" />
+                </div>
+                <div class="form-row full">
+                  <label for="aiKey">API Key</label>
+                  <input id="aiKey" type="password" value="sk-demo-placeholder" />
+                </div>
+              </div>
+              <div class="toolbar">
+                <button class="btn success" data-action="save-ai">保存 AI 配置</button>
+                <button class="btn secondary" data-action="test-ai">测试连接</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">AI 对话</h3>
+                <p class="panel-subtitle">模拟把日志、配置摘要、manifest 作为上下文。</p>
+              </div>
+            </div>
+            <div class="panel-body grid">
+              <div class="toolbar">
+                <label class="checkline"><input type="checkbox" checked />当前日志</label>
+                <label class="checkline"><input type="checkbox" checked />最近错误</label>
+                <label class="checkline"><input type="checkbox" />manifest.json</label>
+              </div>
+              <div class="chat-box" id="chatBox">
+                <div class="message ai">我是静态原型里的 AI 助手。你可以问 attach、capture、export 失败时应该检查什么。</div>
+              </div>
+              <div class="toolbar">
+                <input id="chatInput" placeholder="输入问题，例如：为什么 attach 失败？" />
+                <button class="btn" data-action="send-chat">发送</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-logs">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">配置摘要</h3>
+                <p class="panel-subtitle">这里展示未来可写入 config.json 的关键字段。</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <textarea id="configPreview" readonly></textarea>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">原型操作</h3>
+                <p class="panel-subtitle">这些按钮只影响当前页面状态。</p>
+              </div>
+            </div>
+            <div class="panel-body toolbar">
+              <button class="btn neutral" data-action="copy-config">复制配置摘要</button>
+              <button class="btn warn" data-action="reset-prototype">重置原型状态</button>
+              <button class="btn danger" data-action="show-danger">模拟错误</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="log-panel" aria-label="底部日志">
+        <div class="log-header">
+          <h3 class="log-title">日志</h3>
+          <button class="linkish" data-action="clear-log">清空</button>
+        </div>
+        <div class="log-lines" id="logLines"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-root" id="toastRoot" aria-live="polite"></div>
+
+  <div class="modal-backdrop" id="confirmModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-body">
+        <h3 class="modal-title" id="modalTitle">确认强制关闭 MuMu12？</h3>
+        <p class="modal-copy">真实版本里，这一步会调用 attach --force 并终止正在运行的 MuMu 进程。当前静态原型只模拟确认流程，不会执行任何系统操作。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn neutral" data-action="cancel-force">取消</button>
+        <button class="btn danger" data-action="confirm-force">确认模拟</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.RdcBackend = {
+      available() {
+        return Boolean(window.pywebview && window.pywebview.api);
+      },
+      call(method, payload) {
+        if (!this.available()) {
+          return Promise.resolve({ ok: false, error: { type: "BackendUnavailable", message: "GUI backend is not attached.", action_required: false }, logs: [] });
+        }
+        return window.pywebview.api[method](payload || {});
+      }
+    };
+  </script>
+
+  <script>
+    const state = {
+      renderdocReady: true,
+      mcpReady: true,
+      mcpRunning: true,
+      mcpVersion: "v1.0.0",
+      mcpExtensionLoaded: true,
+      mumuReady: true,
+      sessionAttached: false,
+      lastRdcPath: "D:\\RdcCaptures\\mumu12_20260617_160827.rdc",
+      exportSummary: {
+        texturesOk: 86,
+        texturesFailed: 2,
+        meshesOk: 14,
+        meshesFailed: 0,
+      },
+    };
+
+    const pages = {
+      dashboard: ["工作台", "按 setup -> attach -> capture -> export 完成 RDC 捕捉与资源导出。"],
+      environment: ["环境设置", "配置 RenderDoc、RenderDocMCP、MuMu12 和 Vulkan 前置条件。"],
+      capture: ["捕捉 RDC", "模拟 attach 模拟器与捕捉当前帧。"],
+      export: ["资源导出", "模拟普通导出、指定 EID 模型导出和指定 EID 绑定贴图导出。"],
+      assistant: ["AI 助手", "配置 AI Key，并用日志与配置摘要辅助排查问题。"],
+      logs: ["日志与配置", "查看模拟日志、配置摘要和原型状态。"],
+    };
+
+    const eidRows = [
+      { eid: 1203, name: "DrawIndexed / Character_Body", mesh: "是", textures: 4 },
+      { eid: 1207, name: "DrawIndexed / Weapon_Main", mesh: "是", textures: 3 },
+      { eid: 1214, name: "Draw / UI_Overlay", mesh: "否", textures: 2 },
+      { eid: 1221, name: "DrawIndexed / Scene_Prop", mesh: "是", textures: 5 },
+    ];
+
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+    function timestamp() {
+      return new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    }
+
+    function log(message) {
+      const logLines = $("#logLines");
+      logLines.textContent += `[${timestamp()}] ${message}\n`;
+      logLines.scrollTop = logLines.scrollHeight;
+    }
+
+    function toast(title, body) {
+      const root = $("#toastRoot");
+      const node = document.createElement("div");
+      node.className = "toast";
+      node.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
+      root.appendChild(node);
+      window.setTimeout(() => node.remove(), 3600);
+    }
+
+    function setView(viewName) {
+      const page = pages[viewName] || pages.dashboard;
+      $$(".view").forEach((node) => node.classList.toggle("active", node.id === `view-${viewName}`));
+      $$(".nav-button").forEach((node) => node.classList.toggle("active", node.dataset.viewTarget === viewName));
+      $("#pageTitle").textContent = page[0];
+      $("#pageDescription").textContent = page[1];
+      log(`跳转页面：${page[0]}`);
+    }
+
+    function setTab(tabName) {
+      $$(".tab").forEach((node) => node.classList.toggle("active", node.dataset.tabTarget === tabName));
+      $$(".tab-panel").forEach((node) => node.classList.toggle("active", node.id === `tab-${tabName}`));
+      log(`切换导出页签：${tabName === "normal-export" ? "普通导出" : "高级 EID"}`);
+    }
+
+    function updateStatus() {
+      $("#renderdocDot").className = `dot ${state.renderdocReady ? "ok" : "bad"}`;
+      $("#mcpDot").className = `dot ${state.mcpReady && state.mcpRunning ? "ok" : "bad"}`;
+      $("#mumuDot").className = `dot ${state.mumuReady ? "info" : "bad"}`;
+      $("#sessionDot").className = `dot ${state.sessionAttached ? "ok" : "warn"}`;
+      $("#renderdocStatus").textContent = state.renderdocReady ? "RenderDoc 1.44" : "RenderDoc 未安装";
+      $("#mumuStatus").textContent = state.mumuReady ? "MuMu12 已配置" : "MuMu12 未配置";
+      $("#sessionStatus").textContent = state.sessionAttached ? "已 attach" : "未 attach";
+      $("#mcpStatus").textContent = state.mcpReady
+        ? `MCP ${state.mcpVersion} ${state.mcpRunning ? "运行中" : "已关闭"}`
+        : `MCP ${state.mcpVersion} 未就绪`;
+      updateMcpCards();
+      updateConfigPreview();
+      renderRecent();
+      renderSummary();
+    }
+
+    function updateMcpCards() {
+      const readyText = state.mcpReady ? "MCP 已就绪" : "MCP 未就绪";
+      const runningText = state.mcpRunning ? "运行中" : "已关闭";
+      const extensionText = state.mcpExtensionLoaded ? "扩展已加载" : "扩展未加载";
+      const dotClass = `dot ${state.mcpReady && state.mcpRunning ? "ok" : "bad"}`;
+      [
+        ["#mcpPageStatus", readyText],
+        ["#exportMcpStatus", readyText],
+        ["#mcpPagePill", runningText],
+        ["#exportMcpPill", runningText],
+        ["#mcpVersionText", state.mcpVersion],
+        ["#exportMcpVersion", state.mcpVersion],
+        ["#mcpExtensionText", extensionText],
+        ["#exportMcpExtension", extensionText],
+      ].forEach(([selector, value]) => {
+        const node = $(selector);
+        if (node) node.textContent = value;
+      });
+      ["#mcpPageDot", "#exportMcpDot"].forEach((selector) => {
+        const node = $(selector);
+        if (node) node.className = dotClass;
+      });
+      const releaseTag = $("#mcpReleaseTag");
+      if (releaseTag && releaseTag.value !== state.mcpVersion) releaseTag.value = state.mcpVersion;
+    }
+
+    function updateConfigPreview() {
+      const cfg = {
+        renderdoc: { qrenderdoc_path: $("#renderdocPath")?.value || "" },
+        mcp: { executable_path: $("#mcpPath")?.value || "" },
+        mcp_runtime: {
+          version: state.mcpVersion,
+          running: state.mcpRunning,
+          extension_loaded: state.mcpExtensionLoaded,
+          mode: $("#mcpMode")?.value || "managed",
+        },
+        emulator: {
+          type: "mumu12",
+          root_dir: $("#mumuRoot")?.value || "",
+          graphics_api: "vulkan",
+          vm_index: $("#vmIndex")?.value || "",
+        },
+        capture: {
+          last_output_dir: $("#captureOut")?.value || "",
+          last_rdc_path: state.lastRdcPath,
+          active_session_id: state.sessionAttached ? "prototype-session-001" : null,
+        },
+      };
+      const preview = $("#configPreview");
+      if (preview) preview.value = JSON.stringify(cfg, null, 2);
+    }
+
+    function renderRecent() {
+      const list = $("#recentRdcList");
+      if (!list) return;
+      list.innerHTML = "";
+      const items = [
+        state.lastRdcPath,
+        "D:\\RdcCaptures\\mumu12_20260616_221512.rdc",
+      ];
+      items.forEach((path) => {
+        const item = document.createElement("div");
+        item.className = "result-item";
+        item.innerHTML = `
+          <div class="result-main">
+            <strong>${path.split("\\").pop()}</strong>
+            <span>${path}</span>
+          </div>
+          <div class="toolbar">
+            <button class="btn secondary" data-use-rdc="${path}">导出</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function renderSummary() {
+      const list = $("#summaryList");
+      if (!list) return;
+      const summary = state.exportSummary;
+      list.innerHTML = `
+        <div class="result-item">
+          <div class="result-main"><strong>贴图</strong><span>${summary.texturesOk} 成功 / ${summary.texturesFailed} 失败</span></div>
+          <button class="btn neutral" data-action="open-export-out">打开目录</button>
+        </div>
+        <div class="result-item">
+          <div class="result-main"><strong>模型</strong><span>${summary.meshesOk} 成功 / ${summary.meshesFailed} 失败</span></div>
+          <button class="btn neutral" data-view-target="export">高级导出</button>
+        </div>
+      `;
+    }
+
+    function renderEidTable() {
+      const body = $("#eidTableBody");
+      body.innerHTML = eidRows.map((row) => `
+        <tr>
+          <td>${row.eid}</td>
+          <td>${row.name}</td>
+          <td>${row.mesh}</td>
+          <td>${row.textures}</td>
+          <td>
+            <div class="toolbar">
+              <button class="btn teal" data-row-eid="${row.eid}" data-row-action="model">模型</button>
+              <button class="btn secondary" data-row-eid="${row.eid}" data-row-action="textures">贴图</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function runProgress(selector, done) {
+      const progress = $(selector);
+      if (!progress) {
+        done();
+        return;
+      }
+      const bar = progress.querySelector("span");
+      progress.classList.add("active");
+      bar.style.width = "0%";
+      let value = 0;
+      const timer = window.setInterval(() => {
+        value += 20;
+        bar.style.width = `${value}%`;
+        if (value >= 100) {
+          window.clearInterval(timer);
+          window.setTimeout(() => {
+            progress.classList.remove("active");
+            done();
+          }, 180);
+        }
+      }, 160);
+    }
+
+    function simulateAttach(forceConfirmed = false) {
+      if (!$("#attachVulkan")?.checked && !$("#vulkanConfirmed")?.checked) {
+        toast("需要确认 Vulkan", "真实 attach 前必须确认 MuMu12 已切换到 Vulkan。");
+        log("attach 被阻止：未确认 Vulkan");
+        return;
+      }
+      if ($("#forceCloseMumu")?.checked && !forceConfirmed) {
+        $("#confirmModal").classList.add("active");
+        return;
+      }
+      log("开始模拟 attach：rdc-auto attach --yes-vulkan");
+      runProgress("#attachProgress", () => {
+        state.sessionAttached = true;
+        updateStatus();
+        toast("Attach 完成", "已模拟创建 RenderDoc 控制的 MuMu12 会话。");
+        log("attached session: prototype-session-001");
+      });
+    }
+
+    function simulateCapture() {
+      if (!state.sessionAttached) {
+        toast("尚未 attach", "请先执行 Attach 模拟器，再捕捉 RDC。");
+        log("capture 被阻止：没有 active session");
+        setView("capture");
+        return;
+      }
+      const dir = $("#captureOut")?.value || "D:\\RdcCaptures";
+      const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+      state.lastRdcPath = `${dir}\\mumu12_${stamp}.rdc`;
+      log(`开始模拟捕捉：rdc-auto capture --out ${dir}`);
+      runProgress("#captureProgress", () => {
+        $("#rdcPath").value = state.lastRdcPath;
+        $("#eidRdcPath").value = state.lastRdcPath;
+        updateStatus();
+        toast("捕捉完成", `已模拟生成 ${state.lastRdcPath}`);
+        log(`captured: ${state.lastRdcPath}`);
+      });
+    }
+
+    function simulateExport() {
+      const rdc = $("#rdcPath").value;
+      const assets = $("#assetType").value;
+      const out = $("#exportOut").value;
+      log(`开始模拟导出：rdc-auto export ${rdc} --assets ${assets} --out ${out}`);
+      runProgress("#exportProgress", () => {
+        state.exportSummary = assets === "textures"
+          ? { texturesOk: 86, texturesFailed: 2, meshesOk: 0, meshesFailed: 0 }
+          : assets === "meshes"
+            ? { texturesOk: 0, texturesFailed: 0, meshesOk: 14, meshesFailed: 0 }
+            : { texturesOk: 86, texturesFailed: 2, meshesOk: 14, meshesFailed: 0 };
+        updateStatus();
+        toast("导出完成", "已模拟写出 textures、meshes、raw_mesh_json 和 manifest.json。");
+        log(`export complete: ${out}`);
+      });
+    }
+
+    function handleAction(action) {
+      switch (action) {
+        case "refresh-status":
+          toast("状态已刷新", "这里未来会调用本地后端检测 RenderDoc、MCP、MuMu12 和会话。");
+          log("刷新状态：使用原型内存状态");
+          updateStatus();
+          break;
+        case "check-mcp":
+          log("开始模拟 MCP 检测");
+          runProgress("#mcpProgress", () => {
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            updateStatus();
+            toast("MCP 检测完成", `${state.mcpVersion} 运行中，扩展已加载。`);
+            log(`mcp status: running, version ${state.mcpVersion}`);
+          });
+          break;
+        case "start-mcp":
+          log("开始模拟启动 RenderDocMCP");
+          runProgress("#mcpProgress", () => {
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            updateStatus();
+            toast("MCP 已启动", "真实版本会启动 qrenderdoc/RenderDocMCP 并等待 ping 成功。");
+            log("mcp process started");
+          });
+          break;
+        case "stop-mcp":
+          state.mcpRunning = false;
+          state.mcpExtensionLoaded = false;
+          updateStatus();
+          toast("MCP 已关闭", "当前只是前端模拟；真实版本会请求本地执行层关闭进程。");
+          log("mcp process stopped");
+          break;
+        case "restart-mcp":
+          state.mcpRunning = false;
+          state.mcpExtensionLoaded = false;
+          updateStatus();
+          log("开始模拟重启 RenderDocMCP");
+          runProgress("#mcpProgress", () => {
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            updateStatus();
+            toast("MCP 已重启", "已模拟关闭并重新启动 MCP。");
+            log("mcp process restarted");
+          });
+          break;
+        case "save-mcp":
+          state.mcpVersion = $("#mcpReleaseTag")?.value || state.mcpVersion;
+          updateStatus();
+          toast("MCP 配置已保存", "静态原型只保存到当前页面内存。");
+          log(`保存 MCP 配置：version ${state.mcpVersion}`);
+          break;
+        case "install-mcp":
+          log("开始模拟安装/修复 RenderDocMCP");
+          runProgress("#mcpProgress", () => {
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            updateStatus();
+            toast("MCP 安装/修复完成", "真实版本会下载并安装 RenderDocMCP release。");
+            log(`mcp install complete: ${state.mcpVersion}`);
+          });
+          break;
+        case "open-mcp-dir":
+          toast("打开 MCP 目录占位", "浏览器静态页不能直接打开本机目录，桌面容器或本地后端可以支持。");
+          log("请求打开 MCP 目录");
+          break;
+        case "open-mcp-release":
+          toast("版本信息", `当前模拟版本：${state.mcpVersion}`);
+          log(`查看 MCP 版本：${state.mcpVersion}`);
+          break;
+        case "check-env":
+          log("开始模拟环境检测");
+          runProgress("#envProgress", () => {
+            state.renderdocReady = true;
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            state.mumuReady = true;
+            updateStatus();
+            toast("环境检测完成", "RenderDoc、MCP、MuMu12 示例状态均为可用。");
+            log("setup check complete");
+          });
+          break;
+        case "install-env":
+          log("开始模拟安装/修复：rdc-auto setup");
+          runProgress("#envProgress", () => {
+            state.renderdocReady = true;
+            state.mcpReady = true;
+            state.mcpRunning = true;
+            state.mcpExtensionLoaded = true;
+            state.mumuReady = true;
+            updateStatus();
+            toast("安装/修复完成", "真实版本会执行 rdc-auto setup。");
+            log("setup complete");
+          });
+          break;
+        case "save-env":
+          state.mumuReady = true;
+          updateStatus();
+          toast("配置已保存", "静态原型只保存到当前页面内存。");
+          log("保存环境配置到原型状态");
+          break;
+        case "choose-mumu":
+        case "choose-capture-out":
+        case "choose-rdc":
+          toast("选择器占位", "纯 HTML 原型无法可靠获取完整本机路径，接入桌面容器后再打开系统文件选择器。");
+          log(`点击选择器：${action}`);
+          break;
+        case "open-settings":
+        case "open-export-out":
+          toast("打开目录占位", "浏览器静态页不能直接打开本机目录，桌面容器或本地后端可以支持。");
+          log(`请求打开目录：${action}`);
+          break;
+        case "quick-attach":
+          setView("capture");
+          simulateAttach();
+          break;
+        case "attach":
+          simulateAttach();
+          break;
+        case "quick-capture":
+        case "capture":
+          simulateCapture();
+          break;
+        case "release-session":
+          state.sessionAttached = false;
+          updateStatus();
+          toast("会话已释放", "已模拟清空 active session。");
+          log("released active session");
+          break;
+        case "export":
+          simulateExport();
+          break;
+        case "load-eid-list":
+          renderEidTable();
+          toast("EID 列表已加载", "已模拟读取 DrawCall / EID 列表。");
+          log("loaded draw call list: 4 rows");
+          break;
+        case "export-eid-model":
+          toast("EID 模型导出", `已模拟导出 EID ${$("#eidInput").value} 的模型。`);
+          log(`export mesh for EID ${$("#eidInput").value}`);
+          break;
+        case "export-eid-textures":
+          toast("EID 贴图导出", `已模拟导出 EID ${$("#eidInput").value} 绑定的贴图。`);
+          log(`export bound textures for EID ${$("#eidInput").value}`);
+          break;
+        case "save-ai":
+          toast("AI 配置已保存", "静态原型只保存到当前页面内存。");
+          log("保存 AI 配置到原型状态");
+          break;
+        case "test-ai":
+          toast("AI 连接测试", "已模拟连接成功。真实版本会从本地后端发起请求。");
+          log("AI test connection: ok (prototype)");
+          break;
+        case "send-chat":
+          sendChat();
+          break;
+        case "copy-config":
+          navigator.clipboard?.writeText($("#configPreview").value);
+          toast("已复制", "配置摘要已复制到剪贴板。");
+          log("复制配置摘要");
+          break;
+        case "reset-prototype":
+          state.sessionAttached = false;
+          state.lastRdcPath = "D:\\RdcCaptures\\mumu12_20260617_160827.rdc";
+          updateStatus();
+          toast("已重置", "原型状态已恢复到初始示例值。");
+          log("reset prototype state");
+          break;
+        case "show-danger":
+          toast("模拟错误", "RenderDocMCP did not become ready within 30 seconds。");
+          log("ERROR RenderDocMCP did not become ready within 30 seconds");
+          break;
+        case "clear-log":
+          $("#logLines").textContent = "";
+          break;
+        case "cancel-force":
+          $("#confirmModal").classList.remove("active");
+          log("取消强制关闭 MuMu");
+          break;
+        case "confirm-force":
+          $("#confirmModal").classList.remove("active");
+          log("用户确认模拟 --force");
+          simulateAttach(true);
+          break;
+      }
+    }
+
+    function sendChat() {
+      const input = $("#chatInput");
+      const value = input.value.trim();
+      if (!value) return;
+      const box = $("#chatBox");
+      box.insertAdjacentHTML("beforeend", `<div class="message user">${value}</div>`);
+      input.value = "";
+      const reply = "静态原型回复：建议先检查环境状态、确认 Vulkan、确认 qrenderdoc 只启动一个实例，再查看底部日志中的最近错误。";
+      window.setTimeout(() => {
+        box.insertAdjacentHTML("beforeend", `<div class="message ai">${reply}</div>`);
+        box.scrollTop = box.scrollHeight;
+        log(`AI 对话：${value}`);
+      }, 250);
+    }
+
+    document.addEventListener("click", (event) => {
+      const viewTarget = event.target.closest("[data-view-target]");
+      if (viewTarget) {
+        setView(viewTarget.dataset.viewTarget);
+        return;
+      }
+
+      const tabTarget = event.target.closest("[data-tab-target]");
+      if (tabTarget) {
+        setTab(tabTarget.dataset.tabTarget);
+        return;
+      }
+
+      const actionTarget = event.target.closest("[data-action]");
+      if (actionTarget) {
+        handleAction(actionTarget.dataset.action);
+        return;
+      }
+
+      const useRdc = event.target.closest("[data-use-rdc]");
+      if (useRdc) {
+        $("#rdcPath").value = useRdc.dataset.useRdc;
+        setView("export");
+        setTab("normal-export");
+        toast("已填入 RDC", "可以继续选择导出类型和输出目录。");
+        log(`选择最近 RDC：${useRdc.dataset.useRdc}`);
+        return;
+      }
+
+      const rowAction = event.target.closest("[data-row-action]");
+      if (rowAction) {
+        $("#eidInput").value = rowAction.dataset.rowEid;
+        const label = rowAction.dataset.rowAction === "model" ? "模型" : "贴图";
+        toast(`模拟导出 EID ${label}`, `已选择 EID ${rowAction.dataset.rowEid}。`);
+        log(`row action ${rowAction.dataset.rowAction}: EID ${rowAction.dataset.rowEid}`);
+      }
+    });
+
+    $("#chatInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") handleAction("send-chat");
+    });
+
+    ["renderdocPath", "mcpPath", "mcpReleaseTag", "mcpMode", "mumuRoot", "vmIndex", "captureOut"].forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) node.addEventListener("input", updateConfigPreview);
+    });
+
+    renderEidTable();
+    updateStatus();
+    log("RdcAutomation HTML prototype loaded");
+  </script>
+</body>
+</html>
