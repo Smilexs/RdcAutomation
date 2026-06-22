@@ -33,6 +33,27 @@ def test_gui_index_has_backend_action_mapping():
     assert 'window.RdcBackend.call("start_job"' in html
 
 
+def test_gui_index_deduplicates_backend_job_logs():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'callBackend("get_job", { job_id: jobId }, { replayLogs: false })' in html
+    assert "let lastLogIndex = 0" in html
+
+
+def test_gui_index_preserves_non_empty_form_values_on_status_hydration():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "function setValueIfPresent" in html
+    assert 'value !== ""' in html
+
+
+def test_gui_index_routes_mcp_actions_to_mcp_progress():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'id="mcpProgress"' in html
+    assert 'return "#mcpProgress"' in html
+
+
 def test_build_window_options_points_to_packaged_index(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
 

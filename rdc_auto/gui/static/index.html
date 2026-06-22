@@ -888,6 +888,7 @@
                 <button class="btn teal" data-action="install-mcp">安装/修复 MCP</button>
                 <button class="btn neutral" data-action="open-mcp-dir">打开 MCP 目录</button>
               </div>
+              <div class="progress" id="mcpProgress"><span></span></div>
             </div>
           </section>
         </div>
@@ -1264,12 +1265,15 @@
       window.setTimeout(() => node.remove(), 3600);
     }
 
-    async function callBackend(method, payload) {
+    async function callBackend(method, payload, options) {
       try {
+        options = options || {};
         const response = method === "start_job"
           ? await window.RdcBackend.call("start_job", payload || {})
           : await window.RdcBackend.call(method, payload || {});
-        (response.logs || []).forEach((entry) => log(entry));
+        if (options.replayLogs !== false) {
+          (response.logs || []).forEach((entry) => log(entry));
+        }
         if (!response.ok) {
           const error = response.error || {};
           const message = error.message || `Backend call failed: ${method}`;
@@ -1306,6 +1310,11 @@
       if (node && value !== undefined && value !== null) node.value = value;
     }
 
+    function setValueIfPresent(id, value) {
+      const node = document.getElementById(id);
+      if (node && value !== undefined && value !== null && value !== "") node.value = value;
+    }
+
     function setProgressValue(selector, value, active) {
       const progress = selector ? $(selector) : null;
       if (!progress) return;
@@ -1339,7 +1348,8 @@
     }
 
     function progressSelectorForAction(action) {
-      if (action.indexOf("env") >= 0 || action.indexOf("mcp") >= 0) return "#envProgress";
+      if (action.indexOf("mcp") >= 0) return "#mcpProgress";
+      if (action.indexOf("env") >= 0) return "#envProgress";
       if (action.indexOf("attach") >= 0 || action === "release-session") return "#attachProgress";
       if (action.indexOf("capture") >= 0) return "#captureProgress";
       if (action === "export") return "#exportProgress";
@@ -1359,15 +1369,19 @@
         setProgressValue(progressSelector, 0, false);
         return null;
       }
+      let lastLogIndex = 0;
       return new Promise((resolve) => {
         const poll = async () => {
-          const response = await callBackend("get_job", { job_id: jobId });
+          const response = await callBackend("get_job", { job_id: jobId }, { replayLogs: false });
           if (!response.ok) {
             setProgressValue(progressSelector, 0, false);
             resolve(null);
             return;
           }
           const job = response.data || {};
+          const jobLogs = job.logs || [];
+          jobLogs.slice(lastLogIndex).forEach((entry) => log(entry));
+          lastLogIndex = jobLogs.length;
           setProgressValue(progressSelector, job.progress || 0, true);
           if (job.state === "succeeded") {
             setProgressValue(progressSelector, 100, true);
@@ -1419,12 +1433,12 @@
       state.sessionAttached = Boolean(session.attached);
       if (paths.last_rdc_path) state.lastRdcPath = paths.last_rdc_path;
       state.backendConfigPreview = snapshot.config_preview || null;
-      setInputValue("renderdocPath", renderdoc.path);
-      setInputValue("mumuRoot", mumu.root_dir);
-      setInputValue("vmIndex", mumu.vm_index);
-      setInputValue("mcpPath", mcp.path);
-      setInputValue("rdcPath", paths.last_rdc_path);
-      setInputValue("eidRdcPath", paths.last_rdc_path);
+      setValueIfPresent("renderdocPath", renderdoc.path);
+      setValueIfPresent("mumuRoot", mumu.root_dir);
+      setValueIfPresent("vmIndex", mumu.vm_index);
+      setValueIfPresent("mcpPath", mcp.path);
+      setValueIfPresent("rdcPath", paths.last_rdc_path);
+      setValueIfPresent("eidRdcPath", paths.last_rdc_path);
       const preview = $("#configPreview");
       if (preview && snapshot.config_preview) preview.value = JSON.stringify(snapshot.config_preview, null, 2);
       updateStatus();
@@ -1513,7 +1527,8 @@
       if (releaseTag && releaseTag.value !== state.mcpVersion) releaseTag.value = state.mcpVersion;
     }
 
-    function updateConfigPreview() {
+    function updateConfigPreview(event) {
+      if (event && event.type === "input") state.backendConfigPreview = null;
       const cfg = {
         renderdoc: { qrenderdoc_path: $("#renderdocPath")?.value || "" },
         mcp: { executable_path: $("#mcpPath")?.value || "" },
