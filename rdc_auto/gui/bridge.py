@@ -7,7 +7,7 @@ from typing import Any
 
 from rdc_auto.config import load_config, save_config
 from rdc_auto.errors import UserActionRequired
-from rdc_auto.export_assets import ExportService
+from rdc_auto.export_assets import ExportService, _parse_event_id
 from rdc_auto.gui.jobs import JobManager
 from rdc_auto.gui.status import build_status_snapshot
 from rdc_auto.operations import (
@@ -159,7 +159,7 @@ class GuiBridge:
             payload = payload or {}
             rdc_path = str(payload.get("rdc_path", "")).strip()
             output_dir = str(payload.get("output_dir", "")).strip()
-            event_id = int(payload.get("event_id"))
+            event_id = _parse_event_id(payload.get("event_id"))
             if not rdc_path:
                 raise ValueError("rdc_path is required.")
             if not output_dir:
@@ -174,7 +174,7 @@ class GuiBridge:
             payload = payload or {}
             rdc_path = str(payload.get("rdc_path", "")).strip()
             output_dir = str(payload.get("output_dir", "")).strip()
-            event_id = int(payload.get("event_id"))
+            event_id = _parse_event_id(payload.get("event_id"))
             if not rdc_path:
                 raise ValueError("rdc_path is required.")
             if not output_dir:

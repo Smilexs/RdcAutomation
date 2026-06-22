@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from rdc_auto.errors import McpCapabilityMissing
 from rdc_auto.export_assets import ExportService
 
 
@@ -203,13 +204,26 @@ def test_export_sanitizes_texture_resource_id_only_for_filename(tmp_path):
 
 def test_list_draw_calls_returns_event_rows(tmp_path):
     class FakeMcp:
-        def call(self, method, params=None, timeout=None):
-            assert method == "get_draw_calls"
-            return {"draws": [{"event_id": 1203, "name": "Character.Draw"}]}
+        def __init__(self):
+            self.calls = []
 
-    rows = ExportService(FakeMcp()).list_draw_calls(tmp_path / "capture.rdc")
+        def call(self, method, params=None, timeout=None):
+            params = params or {}
+            self.calls.append((method, params, timeout))
+            if method == "open_capture":
+                return {}
+            if method == "get_draw_calls":
+                return {"draws": [{"event_id": 1203, "name": "Character.Draw"}]}
+            raise AssertionError(method)
+
+    mcp = FakeMcp()
+    rows = ExportService(mcp).list_draw_calls(tmp_path / "capture.rdc")
 
     assert rows == [{"event_id": 1203, "name": "Character.Draw"}]
+    assert mcp.calls == [
+        ("open_capture", {"capture_path": str(tmp_path / "capture.rdc")}, 120.0),
+        ("get_draw_calls", {"include_children": True, "only_actions": True}, 60.0),
+    ]
 
 
 def test_export_mesh_for_event_writes_obj(tmp_path):
@@ -263,3 +277,16 @@ def test_export_bound_textures_for_event_uses_safe_texture_filenames(tmp_path):
     assert texture_call[1]["resource_id"] == "folder/101"
     assert texture_call[1]["output_path"] == str(tmp_path / "out" / "textures" / "eid_1203" / "Albedo_Base_folder_101.png")
     assert (tmp_path / "out" / "textures" / "eid_1203" / "Albedo_Base_folder_101.png").is_file()
+
+
+def test_export_bound_textures_for_event_reports_unsupported_mcp_capability(tmp_path):
+    class FakeMcp:
+        def call(self, method, params=None, timeout=None):
+            if method == "open_capture":
+                return {}
+            if method == "get_bound_textures":
+                raise McpCapabilityMissing("Method not found: get_bound_textures")
+            raise AssertionError(method)
+
+    with pytest.raises(McpCapabilityMissing, match="Installed RenderDocMCP does not support EID bound texture export."):
+        ExportService(FakeMcp()).export_bound_textures_for_event(tmp_path / "capture.rdc", tmp_path / "out", 1203)

@@ -74,6 +74,24 @@ def test_gui_index_routes_eid_actions_to_backend():
     assert 'callBackend("export_eid_textures"' in html
 
 
+def test_gui_index_routes_eid_row_actions_to_backend_exports():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'rowAction.dataset.rowAction === "model" ? "export-eid-model" : "export-eid-textures"' in html
+    assert "return handleAction(action);" in html
+
+
+def test_gui_index_escapes_backend_text_in_eid_table_and_toasts():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "function escapeHtml" in html
+    assert "escapeHtml(title)" in html
+    assert "escapeHtml(body)" in html
+    assert "${escapeHtml(row.name)}" in html
+    assert "${escapeHtml(row.mesh)}" in html
+    assert "${escapeHtml(row.textures)}" in html
+
+
 def test_build_window_options_points_to_packaged_index(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
 

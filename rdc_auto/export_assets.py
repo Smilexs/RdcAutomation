@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Protocol
 
+from .errors import McpCapabilityMissing
 from .mesh_convert import convert_mesh_json_to_obj
 
 
@@ -34,6 +35,8 @@ class ExportService:
         self.mcp = mcp
 
     def list_draw_calls(self, rdc_path: str | Path) -> list[dict]:
+        rdc_path = Path(rdc_path)
+        self.mcp.call("open_capture", {"capture_path": str(rdc_path)}, timeout=120.0)
         rows = []
         draws = self.mcp.call("get_draw_calls", {"include_children": True, "only_actions": True}, timeout=60.0).get("draws", [])
         for draw in draws:
@@ -74,7 +77,10 @@ class ExportService:
         textures_dir.mkdir(parents=True, exist_ok=True)
 
         self.mcp.call("open_capture", {"capture_path": str(rdc_path)}, timeout=120.0)
-        response = self.mcp.call("get_bound_textures", {"event_id": event_id}, timeout=60.0)
+        try:
+            response = self.mcp.call("get_bound_textures", {"event_id": event_id}, timeout=60.0)
+        except McpCapabilityMissing as exc:
+            raise McpCapabilityMissing("Installed RenderDocMCP does not support EID bound texture export.") from exc
         textures = response.get("textures", response.get("bound_textures", []))
         exported = []
         for index, texture in enumerate(textures, start=1):
@@ -83,11 +89,14 @@ class ExportService:
                 continue
             name = str(texture.get("name") or f"texture_{index}")
             path = textures_dir / f"{safe_name(name)}_{safe_name(resource_id)}.png"
-            self.mcp.call(
-                "export_texture_to_file",
-                {"resource_id": resource_id, "output_path": str(path), "file_type": "PNG"},
-                timeout=120.0,
-            )
+            try:
+                self.mcp.call(
+                    "export_texture_to_file",
+                    {"resource_id": resource_id, "output_path": str(path), "file_type": "PNG"},
+                    timeout=120.0,
+                )
+            except McpCapabilityMissing as exc:
+                raise McpCapabilityMissing("Installed RenderDocMCP does not support EID bound texture export.") from exc
             exported.append({"resource_id": resource_id, "name": name, "path": str(path)})
         return {"event_id": event_id, "textures": exported}
 

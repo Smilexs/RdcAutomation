@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from rdc_auto.config import AppConfig, load_config
-from rdc_auto.errors import UserActionRequired
+from rdc_auto.errors import McpCapabilityMissing, UserActionRequired
 from rdc_auto.gui.bridge import GuiBridge
 from rdc_auto.gui.status import build_status_snapshot
 
@@ -199,6 +201,24 @@ def test_bridge_export_eid_model_returns_error_for_invalid_event_id(tmp_path):
     assert response["error"]["type"] == "ValueError"
 
 
+@pytest.mark.parametrize("event_id", [True, 12.7, "0"])
+def test_bridge_export_eid_model_rejects_non_strict_event_ids_before_mcp(monkeypatch, tmp_path, event_id):
+    def fail_mcp_client(cfg):
+        raise AssertionError("mcp_client should not be called for invalid event_id")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", lambda: "cfg")
+    monkeypatch.setattr("rdc_auto.gui.bridge.mcp_client", fail_mcp_client)
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.export_eid_model(
+        {"rdc_path": str(tmp_path / "capture.rdc"), "output_dir": str(tmp_path / "out"), "event_id": event_id}
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "ValueError"
+    assert response["error"]["message"].startswith("invalid event_id:")
+
+
 def test_bridge_export_eid_textures_returns_result(monkeypatch, tmp_path):
     class FakeExportService:
         def __init__(self, mcp):
@@ -223,6 +243,46 @@ def test_bridge_export_eid_textures_returns_result(monkeypatch, tmp_path):
     assert response["ok"] is True
     assert response["data"] == {"event_id": 1203, "textures": [{"path": str(tmp_path / "out" / "a.png")}]}
     assert response["logs"] == ["exported 1 textures for EID 1203"]
+
+
+@pytest.mark.parametrize("event_id", [False, 4.2, 0])
+def test_bridge_export_eid_textures_rejects_non_strict_event_ids_before_mcp(monkeypatch, tmp_path, event_id):
+    def fail_mcp_client(cfg):
+        raise AssertionError("mcp_client should not be called for invalid event_id")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", lambda: "cfg")
+    monkeypatch.setattr("rdc_auto.gui.bridge.mcp_client", fail_mcp_client)
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.export_eid_textures(
+        {"rdc_path": str(tmp_path / "capture.rdc"), "output_dir": str(tmp_path / "out"), "event_id": event_id}
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "ValueError"
+    assert response["error"]["message"].startswith("invalid event_id:")
+
+
+def test_bridge_export_eid_textures_returns_clear_unsupported_capability_error(monkeypatch, tmp_path):
+    class FakeExportService:
+        def __init__(self, mcp):
+            self.mcp = mcp
+
+        def export_bound_textures_for_event(self, rdc_path, output_dir, event_id):
+            raise McpCapabilityMissing("Installed RenderDocMCP does not support EID bound texture export.")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.load_config", lambda: "cfg")
+    monkeypatch.setattr("rdc_auto.gui.bridge.mcp_client", lambda cfg: "mcp")
+    monkeypatch.setattr("rdc_auto.gui.bridge.ExportService", FakeExportService)
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.export_eid_textures(
+        {"rdc_path": str(tmp_path / "capture.rdc"), "output_dir": str(tmp_path / "out"), "event_id": "1203"}
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "McpCapabilityMissing"
+    assert response["error"]["message"] == "Installed RenderDocMCP does not support EID bound texture export."
 
 
 class FakeWindow:

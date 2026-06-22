@@ -1246,6 +1246,16 @@
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
     function timestamp() {
       return new Date().toLocaleTimeString("zh-CN", { hour12: false });
     }
@@ -1260,7 +1270,7 @@
       const root = $("#toastRoot");
       const node = document.createElement("div");
       node.className = "toast";
-      node.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
+      node.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
       root.appendChild(node);
       window.setTimeout(() => node.remove(), 3600);
     }
@@ -1615,20 +1625,23 @@
 
     function renderEidTable() {
       const body = $("#eidTableBody");
-      body.innerHTML = eidRows.map((row) => `
+      body.innerHTML = eidRows.map((row) => {
+        const eid = escapeHtml(row.eid);
+        return `
         <tr>
-          <td>${row.eid}</td>
-          <td>${row.name}</td>
-          <td>${row.mesh}</td>
-          <td>${row.textures}</td>
+          <td>${eid}</td>
+          <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.mesh)}</td>
+          <td>${escapeHtml(row.textures)}</td>
           <td>
             <div class="toolbar">
-              <button class="btn teal" data-row-eid="${row.eid}" data-row-action="model">模型</button>
-              <button class="btn secondary" data-row-eid="${row.eid}" data-row-action="textures">贴图</button>
+              <button class="btn teal" data-row-eid="${eid}" data-row-action="model">模型</button>
+              <button class="btn secondary" data-row-eid="${eid}" data-row-action="textures">贴图</button>
             </div>
           </td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
     }
 
     function runProgress(selector, done) {
@@ -2050,6 +2063,10 @@
       const rowAction = event.target.closest("[data-row-action]");
       if (rowAction) {
         $("#eidInput").value = rowAction.dataset.rowEid;
+        if (window.RdcBackend.available()) {
+          const action = rowAction.dataset.rowAction === "model" ? "export-eid-model" : "export-eid-textures";
+          return handleAction(action);
+        }
         const label = rowAction.dataset.rowAction === "model" ? "模型" : "贴图";
         toast(`模拟导出 EID ${label}`, `已选择 EID ${rowAction.dataset.rowEid}。`);
         log(`row action ${rowAction.dataset.rowAction}: EID ${rowAction.dataset.rowEid}`);
