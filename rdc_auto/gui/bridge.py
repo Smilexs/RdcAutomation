@@ -9,7 +9,7 @@ from rdc_auto.config import load_config, save_config
 from rdc_auto.errors import UserActionRequired
 from rdc_auto.export_assets import ExportService, _parse_event_id
 from rdc_auto.gui.jobs import JobManager
-from rdc_auto.gui.status import build_status_snapshot
+from rdc_auto.gui.status import build_status_snapshot, probe_mcp_runtime
 from rdc_auto.operations import (
     OperationContext,
     attach,
@@ -19,6 +19,7 @@ from rdc_auto.operations import (
     release_session,
     restart_mcp,
     setup_environment,
+    setup_mcp,
     mcp_client,
     start_mcp,
     stop_mcp,
@@ -31,15 +32,16 @@ JobFn = Callable[[EmitProgress], dict[str, Any]]
 
 class GuiBridge:
     def __init__(self, run_jobs_inline: bool = False):
-        self.window = None
+        self._window = None
         self.jobs = JobManager(run_inline=run_jobs_inline)
 
     def bind_window(self, window) -> None:
-        self.window = window
+        self._window = window
 
     def get_status(self, payload: dict | None = None) -> dict:
         try:
-            return self._ok(build_status_snapshot(load_config()))
+            cfg = load_config()
+            return self._ok(build_status_snapshot(cfg, mcp_runtime=probe_mcp_runtime()))
         except Exception as exc:
             return self._fail(exc)
 
@@ -103,9 +105,12 @@ class GuiBridge:
             actions: dict[str, JobFn] = {
                 "check_environment": lambda emit: check_environment(OperationContext(progress=emit)),
                 "setup": lambda emit: _completed(setup_environment(OperationContext(progress=emit))),
+                "setup_mcp": lambda emit: _completed(setup_mcp(OperationContext(progress=emit))),
                 "start_mcp": lambda emit: _running(start_mcp(OperationContext(progress=emit))),
                 "stop_mcp": lambda emit: _stopped(stop_mcp(OperationContext(progress=emit))),
-                "restart_mcp": lambda emit: _running(restart_mcp(OperationContext(progress=emit))),
+                "restart_mcp": lambda emit: _running(
+                    restart_mcp(OperationContext(progress=emit), force_release_session=True)
+                ),
                 "attach": lambda emit: {
                     "launch_id": str(
                         attach(
@@ -187,12 +192,12 @@ class GuiBridge:
 
     def choose_directory(self, payload: dict | None = None) -> dict:
         try:
-            if self.window is None:
+            if self._window is None:
                 return self._fail(UserActionRequired("The GUI window is not ready."))
             import webview
 
             payload = payload or {}
-            result = self.window.create_file_dialog(
+            result = self._window.create_file_dialog(
                 webview.FOLDER_DIALOG,
                 directory=str(payload.get("initial_dir", "")),
             )
@@ -202,11 +207,11 @@ class GuiBridge:
 
     def choose_file(self, payload: dict | None = None) -> dict:
         try:
-            if self.window is None:
+            if self._window is None:
                 return self._fail(UserActionRequired("The GUI window is not ready."))
             import webview
 
-            result = self.window.create_file_dialog(
+            result = self._window.create_file_dialog(
                 webview.OPEN_DIALOG,
                 allow_multiple=False,
                 file_types=("RenderDoc Capture (*.rdc)",),

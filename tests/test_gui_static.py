@@ -27,6 +27,7 @@ def test_gui_index_has_backend_action_mapping():
     assert "function callBackend" in html
     assert "function runJobAction" in html
     assert '"check-env": "check_environment"' in html
+    assert '"install-mcp": "setup_mcp"' in html
     assert '"attach": "attach"' in html
     assert '"capture": "capture"' in html
     assert '"export": "export"' in html

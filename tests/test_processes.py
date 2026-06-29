@@ -12,7 +12,7 @@ def test_tasklist_count_from_csv_counts_matching_rows():
 
 
 def test_is_process_running_uses_runner():
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         return subprocess.CompletedProcess(args, 0, stdout='"Image Name","PID"\n"RenderDocMCP.exe","20"\n')
 
     assert count_processes("RenderDocMCP.exe", runner=runner) == 1

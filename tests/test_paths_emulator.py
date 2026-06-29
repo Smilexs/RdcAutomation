@@ -43,7 +43,7 @@ def test_validate_mumu_root_rejects_missing_exe(tmp_path):
 def test_emulator_running_detects_tasklist_csv():
     calls = []
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         calls.append(args)
         return subprocess.CompletedProcess(args, 0, stdout='"Image Name","PID"\n"MuMuNxMain.exe","1234"\n')
 
@@ -53,10 +53,36 @@ def test_emulator_running_detects_tasklist_csv():
     assert calls[0][0] == "tasklist"
 
 
+def test_emulator_running_detects_tasklist_csv_without_english_header():
+    def runner(args, capture_output, text, check, **kwargs):
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout='"映像名称","PID","会话名","会话#","内存使用"\n"MuMuNxMain.exe","1234","Console","1","10,000 K"\n',
+        )
+
+    proc = EmulatorProcess(runner=runner)
+
+    assert proc.is_running("MuMuNxMain.exe") is True
+
+
+def test_emulator_process_queries_hide_windows_on_windows():
+    kwargs_seen = []
+
+    def runner(args, capture_output, text, check, **kwargs):
+        kwargs_seen.append(kwargs)
+        return subprocess.CompletedProcess(args, 0, stdout='"Image Name","PID"\n')
+
+    EmulatorProcess(runner=runner).is_running("MuMuNxMain.exe")
+
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        assert kwargs_seen[0]["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+
 def test_terminate_tree_raises_when_taskkill_fails():
     calls = []
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         calls.append(args)
         return subprocess.CompletedProcess(args, 1, stdout="not found", stderr="access denied")
 
@@ -97,18 +123,52 @@ def test_mumu12_executable_uses_configured_relative_path(tmp_path):
     assert mumu.executable() == exe
 
 
-def test_mumu12_launch_spec_uses_mumu_cli_for_configured_vm_index(tmp_path):
+def test_mumu12_launch_spec_uses_mumu_manager_for_configured_vm_index(tmp_path):
     main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
-    cli_exe = main_exe.parent / "mumu-cli.exe"
+    manager_exe = main_exe.parent / "MuMuManager.exe"
     main_exe.parent.mkdir(parents=True)
     main_exe.write_text("", encoding="utf-8")
-    cli_exe.write_text("", encoding="utf-8")
+    manager_exe.write_text("", encoding="utf-8")
     cfg = AppConfig.default()
     cfg.emulator.root_dir = str(tmp_path)
     cfg.emulator.vm_index = "1"
 
     spec = MuMu12(cfg).launch_spec()
 
-    assert spec["exe_path"] == cli_exe
-    assert spec["working_dir"] == cli_exe.parent
-    assert spec["cmd_line"] == "control --vmindex 1 launch"
+    assert spec["exe_path"] == manager_exe
+    assert spec["working_dir"] == manager_exe.parent
+    assert spec["cmd_line"] == "control -v 1 launch"
+
+
+def test_mumu12_launch_spec_defaults_to_manager_vm_zero(tmp_path):
+    main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    manager_exe = main_exe.parent / "MuMuManager.exe"
+    main_exe.parent.mkdir(parents=True)
+    main_exe.write_text("", encoding="utf-8")
+    manager_exe.write_text("", encoding="utf-8")
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = str(tmp_path)
+
+    spec = MuMu12(cfg).launch_spec()
+
+    assert spec["exe_path"] == manager_exe
+    assert spec["working_dir"] == manager_exe.parent
+    assert spec["cmd_line"] == "control -v 0 launch"
+
+
+def test_mumu12_launch_spec_finds_shell_mumu_manager(tmp_path):
+    main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    manager_exe = tmp_path / "MuMuPlayer-12.0" / "shell" / "MuMuManager.exe"
+    main_exe.parent.mkdir(parents=True)
+    manager_exe.parent.mkdir(parents=True)
+    main_exe.write_text("", encoding="utf-8")
+    manager_exe.write_text("", encoding="utf-8")
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = str(tmp_path)
+    cfg.emulator.vm_index = "2"
+
+    spec = MuMu12(cfg).launch_spec()
+
+    assert spec["exe_path"] == manager_exe
+    assert spec["working_dir"] == manager_exe.parent
+    assert spec["cmd_line"] == "control -v 2 launch"

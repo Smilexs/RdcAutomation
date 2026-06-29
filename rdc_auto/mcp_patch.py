@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -85,10 +86,14 @@ def _patch_socket_server(path: Path) -> bool:
         return False
 
     text = path.read_text(encoding="utf-8")
+    original = text
+    text = _repair_socket_server_text(text)
     if UI_THREAD_PATCH_MARKER in text:
+        if text != original:
+            path.write_text(text, encoding="utf-8")
+            return True
         return False
 
-    original = text
     class_marker = "class MCPBridgeServer(object):"
     if "class QtMainThreadDispatcher" not in text and class_marker in text:
         text = text.replace(class_marker, _QT_DISPATCHER_CODE + "\n\n" + class_marker, 1)
@@ -123,6 +128,22 @@ def _patch_socket_server(path: Path) -> bool:
 
     path.write_text(f"{UI_THREAD_PATCH_MARKER}\n{text}", encoding="utf-8")
     return True
+
+
+def _repair_socket_server_text(text: str) -> str:
+    text = text.replace(
+        "        self.dispatcher = dispatcher\n        self.dispatcher = dispatcher\n",
+        "        self.dispatcher = dispatcher\n",
+    )
+    return re.sub(
+        r"(?m)^([ \t]+)else:\n"
+        r"\1    if self\.dispatcher is not None:\n"
+        r"\1    response = self\.dispatcher\.call\(self\.handler\.handle, request\)\n"
+        r"\1else:\n"
+        r"\1    response = self\.handler\.handle\(request\)\n",
+        lambda match: f"{match.group(1)}else:\n{match.group(1)}    response = self.handler.handle(request)\n",
+        text,
+    )
 
 
 def _patch_request_handler(path: Path) -> bool:

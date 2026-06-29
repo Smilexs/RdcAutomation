@@ -89,6 +89,16 @@ class FakeLaunchSpecMumu(FakeMumu):
         }
 
 
+class WaitableFakeMumu(FakeMumu):
+    def __init__(self, exe: Path, running: bool):
+        super().__init__(exe, running)
+        self.waited_timeout = None
+
+    def wait_until_running(self, timeout_seconds: float):
+        self.waited_timeout = timeout_seconds
+        self._running = True
+
+
 def test_attach_refuses_running_mumu_without_force(tmp_path):
     cfg = AppConfig.default()
     service = CaptureService(cfg, FakeMcp(), FakeMumu(tmp_path / "MuMuNxMain.exe", running=True))
@@ -137,6 +147,17 @@ def test_attach_uses_emulator_launch_spec(tmp_path):
     assert mcp.calls[0][1]["exe_path"] == str(launcher)
     assert mcp.calls[0][1]["working_dir"] == str(tmp_path)
     assert mcp.calls[0][1]["cmd_line"] == "control --vmindex 1 launch"
+
+
+def test_attach_waits_for_emulator_process_after_renderdoc_launch(tmp_path):
+    cfg = AppConfig.default()
+    mcp = FakeMcp()
+    mumu = WaitableFakeMumu(tmp_path / "MuMuNxMain.exe", running=False)
+    service = CaptureService(cfg, mcp, mumu)
+
+    service.attach(force=False, confirm_vulkan=True)
+
+    assert mumu.waited_timeout == 60.0
 
 
 def test_attach_does_not_connect_mumu_headless_target(tmp_path):

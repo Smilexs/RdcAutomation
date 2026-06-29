@@ -186,6 +186,7 @@ def test_attach_reprompts_when_configured_mumu_root_is_invalid(monkeypatch, tmp_
     monkeypatch.setattr("rdc_auto.cli._capture_bridge_client", lambda config, start_qrenderdoc: object())
     monkeypatch.setattr("rdc_auto.cli.prompt_path", lambda label: good_root)
     monkeypatch.setattr("rdc_auto.cli.CaptureService", FakeCaptureService)
+    monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
 
     from rdc_auto.cli import _cmd_attach
 
@@ -640,7 +641,7 @@ def test_start_qrenderdoc_reuses_existing_process(monkeypatch, tmp_path):
     cfg.renderdoc.qrenderdoc_path = str(qrenderdoc)
     popen_calls = []
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         return type(
             "Result",
             (),
@@ -664,7 +665,7 @@ def test_start_qrenderdoc_refuses_multiple_instances(monkeypatch, tmp_path):
     cfg.renderdoc.qrenderdoc_path = str(qrenderdoc)
     popen_calls = []
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         return type(
             "Result",
             (),
@@ -683,7 +684,7 @@ def test_start_qrenderdoc_refuses_multiple_instances(monkeypatch, tmp_path):
 def test_process_count_parses_tasklist_without_english_header(monkeypatch):
     from rdc_auto.cli import _process_count
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         return type(
             "Result",
             (),
@@ -706,7 +707,7 @@ def test_start_qrenderdoc_runs_python_bootstrap_when_provided(monkeypatch, tmp_p
     cfg.renderdoc.qrenderdoc_path = str(qrenderdoc)
     popen_calls = []
 
-    def runner(args, capture_output, text, check):
+    def runner(args, capture_output, text, check, **kwargs):
         return type("Result", (), {"stdout": '"Image Name","PID"\n'})()
 
     monkeypatch.setattr("rdc_auto.cli.subprocess.run", runner)

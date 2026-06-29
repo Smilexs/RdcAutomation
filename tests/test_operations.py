@@ -6,7 +6,7 @@ import pytest
 
 from rdc_auto.config import AppConfig, load_config, save_config
 from rdc_auto.errors import UserActionRequired
-from rdc_auto.operations import OperationContext, check_environment, release_session, start_mcp, stop_mcp
+from rdc_auto.operations import OperationContext, check_environment, release_session, restart_mcp, start_mcp, stop_mcp
 
 
 def test_cli_save_monkeypatch_does_not_pollute_direct_operation_save(monkeypatch, tmp_path):
@@ -105,6 +105,26 @@ def test_stop_mcp_refuses_active_capture_session_before_terminate(monkeypatch, f
         stop_mcp(OperationContext(config=cfg))
 
     assert terminated == []
+
+
+def test_restart_mcp_can_force_release_active_capture_session(monkeypatch):
+    cfg = AppConfig.default()
+    cfg.capture.active_launch_id = "launch-1"
+    terminated = []
+
+    monkeypatch.setattr("rdc_auto.operations.stop_standalone_mcp_bridge", lambda executable_path: terminated.append(executable_path))
+    monkeypatch.setattr("rdc_auto.operations.is_process_running", lambda image_name: False)
+    monkeypatch.setattr("rdc_auto.operations.start_mcp", lambda ctx: "client")
+
+    client = restart_mcp(
+        OperationContext(config=cfg, save_config_fn=lambda config: None),
+        force_release_session=True,
+    )
+
+    assert client == "client"
+    assert cfg.capture.active_session_id is None
+    assert cfg.capture.active_launch_id == ""
+    assert terminated == ["RenderDocMCP.exe"]
 
 
 def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_path):

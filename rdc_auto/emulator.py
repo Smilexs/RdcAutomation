@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import csv
 import subprocess
-from io import StringIO
+import time
 from pathlib import Path
 from typing import Callable
 
 from .config import AppConfig
 from .paths import validate_mumu_root
+from .processes import hidden_console_kwargs, tasklist_count_from_csv
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -23,18 +23,29 @@ class EmulatorProcess:
             capture_output=True,
             text=True,
             check=False,
+            **hidden_console_kwargs(),
         )
-        rows = csv.DictReader(StringIO(result.stdout))
-        for row in rows:
-            if row.get("Image Name", "").lower() == image_name.lower():
-                return True
-        return False
+        return tasklist_count_from_csv(result.stdout, image_name) > 0
 
     def terminate_tree(self, image_name: str) -> None:
-        result = self._runner(["taskkill", "/IM", image_name, "/T", "/F"], capture_output=True, text=True, check=False)
+        result = self._runner(
+            ["taskkill", "/IM", image_name, "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            **hidden_console_kwargs(),
+        )
         if result.returncode != 0:
             details = "\n".join(part for part in [result.stderr, result.stdout] if part)
             raise RuntimeError(f"Failed to terminate {image_name}: {details}")
+
+    def wait_until_running(self, image_name: str, timeout_seconds: float) -> None:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if self.is_running(image_name):
+                return
+            time.sleep(0.5)
+        raise TimeoutError(f"Timed out waiting for process to start: {image_name}")
 
 
 class MuMu12:
@@ -52,17 +63,15 @@ class MuMu12:
 
     def launch_spec(self) -> dict[str, Path | str]:
         exe = self.executable()
-        vm_index = getattr(self.config.emulator, "vm_index", "").strip()
-        if not vm_index:
+        manager = self._manager_executable(exe)
+        if manager is None:
             return {"exe_path": exe, "working_dir": exe.parent, "cmd_line": ""}
 
-        mumu_cli = exe.parent / "mumu-cli.exe"
-        if not mumu_cli.is_file():
-            raise FileNotFoundError(f"MuMu12 CLI executable not found: {mumu_cli}")
+        vm_index = getattr(self.config.emulator, "vm_index", "").strip() or "0"
         return {
-            "exe_path": mumu_cli,
-            "working_dir": mumu_cli.parent,
-            "cmd_line": f"control --vmindex {vm_index} launch",
+            "exe_path": manager,
+            "working_dir": manager.parent,
+            "cmd_line": f"control -v {vm_index} launch",
         }
 
     def target_process_name(self) -> str:
@@ -73,3 +82,17 @@ class MuMu12:
 
     def terminate(self) -> None:
         self.process.terminate_tree(self.image_name)
+
+    def wait_until_running(self, timeout_seconds: float) -> None:
+        self.process.wait_until_running(self.image_name, timeout_seconds)
+
+    def _manager_executable(self, exe: Path) -> Path | None:
+        player_root = exe.parent.parent
+        candidates = [
+            exe.parent / "MuMuManager.exe",
+            player_root / "shell" / "MuMuManager.exe",
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None

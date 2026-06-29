@@ -137,9 +137,10 @@ class McpInstaller:
         return found
 
     def runtime_executable(self) -> Path:
+        found = self.discover_executable(allow_configured=True)
+        if found:
+            return found
         if not is_release_setup_asset_name(self.config.mcp.asset_name):
             raise FileNotFoundError("RenderDocMCP release setup install is not recorded. Run rdc-auto setup.")
-        found = self.discover_executable(allow_configured=True)
         if not found:
             raise FileNotFoundError("RenderDocMCP executable was not found. Run rdc-auto setup.")
-        return found

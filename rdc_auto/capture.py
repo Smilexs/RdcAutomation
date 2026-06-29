@@ -9,6 +9,9 @@ from .emulator import MuMu12
 from .errors import UserActionRequired
 
 
+LAUNCH_TIMEOUT_SECONDS = 60.0
+
+
 class McpCaller(Protocol):
     def call(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
         raise NotImplementedError
@@ -40,8 +43,9 @@ class CaptureService:
         result = self.mcp.call(
             "launch_application",
             params,
-            timeout=120.0,
+            timeout=LAUNCH_TIMEOUT_SECONDS + 60.0,
         )
+        self._wait_for_emulator_process()
         self._clear_active_session()
         return str(result.get("launch_id") or result.get("ident") or result.get("pid") or result.get("session_id") or "")
 
@@ -57,6 +61,12 @@ class CaptureService:
         if target_process_name is not None:
             return str(target_process_name()).strip()
         return ""
+
+    def _wait_for_emulator_process(self) -> None:
+        wait_until_running = getattr(self.mumu, "wait_until_running", None)
+        if wait_until_running is None:
+            return
+        wait_until_running(LAUNCH_TIMEOUT_SECONDS)
 
     def capture(self, output_dir: str | Path, timeout_seconds: int = 60) -> Path:
         session_id = self._ensure_capture_session(timeout_seconds)

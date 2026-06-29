@@ -8,7 +8,7 @@ import pytest
 from rdc_auto.config import AppConfig, load_config
 from rdc_auto.errors import McpCapabilityMissing, UserActionRequired
 from rdc_auto.gui.bridge import GuiBridge
-from rdc_auto.gui.status import build_status_snapshot
+from rdc_auto.gui.status import McpRuntimeProbe, build_status_snapshot
 
 
 def test_build_status_snapshot_contains_topbar_sections(tmp_path):
@@ -41,6 +41,21 @@ def test_build_status_snapshot_empty_process_counts_are_authoritative(monkeypatc
     assert snapshot["mcp"]["extension_loaded"] is False
 
 
+def test_build_status_snapshot_uses_mcp_probe_over_qrenderdoc_process_guess(tmp_path):
+    cfg = AppConfig.default()
+    cfg.mcp.executable_path = str(tmp_path / "RenderDocMCP.exe")
+
+    snapshot = build_status_snapshot(
+        cfg,
+        process_counts={"qrenderdoc.exe": 1, "RenderDocMCP.exe": 0, "renderdoc-mcp.exe": 0},
+        mcp_runtime=McpRuntimeProbe(process_running=True, reachable=False, detail="ping timeout"),
+    )
+
+    assert snapshot["mcp"]["running"] is False
+    assert snapshot["mcp"]["extension_loaded"] is False
+    assert snapshot["mcp"]["runtime_detail"] == "ping timeout"
+
+
 def test_build_status_snapshot_masks_saved_ai_api_key():
     cfg = AppConfig.default()
     cfg.ai.api_key = "sk-secret"
@@ -60,6 +75,16 @@ def test_bridge_get_status_returns_envelope(tmp_path, monkeypatch):
     assert response["ok"] is True
     assert "renderdoc" in response["data"]
     assert response["logs"] == []
+
+
+def test_bridge_keeps_bound_window_private_to_avoid_pywebview_api_recursion():
+    bridge = GuiBridge(run_jobs_inline=True)
+    window = object()
+
+    bridge.bind_window(window)
+
+    assert "window" not in bridge.__dict__
+    assert bridge._window is window
 
 
 def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
@@ -141,6 +166,23 @@ def test_bridge_attach_parses_false_string_params_as_false(monkeypatch):
 
     assert job["data"]["state"] == "succeeded"
     assert calls == [{"force": False, "confirm_vulkan": False, "vm_index": "1"}]
+
+
+def test_bridge_restart_mcp_forces_release_of_stale_capture_session(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    calls = []
+
+    def fake_restart(ctx, force_release_session=False):
+        calls.append(force_release_session)
+        return object()
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.restart_mcp", fake_restart)
+
+    response = bridge.start_job({"action": "restart_mcp"})
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+
+    assert job["data"]["state"] == "succeeded"
+    assert calls == [True]
 
 
 def test_bridge_get_status_returns_error_envelope_on_runtime_error(monkeypatch):

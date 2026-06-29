@@ -1,13 +1,59 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from rdc_auto.config import AppConfig
+from rdc_auto.errors import McpCapabilityMissing, RdcAutoError
+from rdc_auto.mcp_client import FileIpcMcpClient
 from rdc_auto.processes import count_processes
 from rdc_auto.renderdoc_installer import RENDERDOC_VERSION
 
 
-def build_status_snapshot(cfg: AppConfig, process_counts: dict[str, int] | None = None) -> dict:
+@dataclass(frozen=True)
+class McpRuntimeProbe:
+    process_running: bool
+    reachable: bool
+    detail: str = ""
+
+
+def probe_mcp_runtime(process_counts: dict[str, int] | None = None, ping_timeout: float = 0.75) -> McpRuntimeProbe:
+    def process_count(name: str) -> int:
+        if process_counts is not None:
+            return process_counts.get(name, 0)
+        return count_processes(name)
+
+    qrenderdoc_count = process_count("qrenderdoc.exe")
+    standalone_count = process_count("RenderDocMCP.exe") + process_count("renderdoc-mcp.exe")
+    process_running = qrenderdoc_count == 1 or standalone_count > 0
+    if qrenderdoc_count > 1:
+        return McpRuntimeProbe(True, False, "multiple qrenderdoc.exe instances are running")
+    if not process_running:
+        return McpRuntimeProbe(False, False, "MCP process is not running")
+
+    client = FileIpcMcpClient(
+        executable_path=None,
+        process_alive=lambda: (
+            count_processes("qrenderdoc.exe") == 1
+            or count_processes("RenderDocMCP.exe") > 0
+            or count_processes("renderdoc-mcp.exe") > 0
+        ),
+        process_description="RenderDoc MCP runtime",
+    )
+    try:
+        result = client.call("ping", timeout=ping_timeout)
+    except McpCapabilityMissing as exc:
+        return McpRuntimeProbe(True, False, str(exc))
+    except (FileNotFoundError, TimeoutError, RdcAutoError, OSError, ValueError) as exc:
+        return McpRuntimeProbe(True, False, str(exc))
+    reachable = result.get("status") == "ok"
+    return McpRuntimeProbe(True, reachable, "ok" if reachable else "unexpected ping response")
+
+
+def build_status_snapshot(
+    cfg: AppConfig,
+    process_counts: dict[str, int] | None = None,
+    mcp_runtime: McpRuntimeProbe | None = None,
+) -> dict:
     def process_count(name: str) -> int:
         if process_counts is not None:
             return process_counts.get(name, 0)
@@ -15,7 +61,17 @@ def build_status_snapshot(cfg: AppConfig, process_counts: dict[str, int] | None 
 
     renderdoc_ready = bool(cfg.renderdoc.qrenderdoc_path)
     mcp_ready = bool(cfg.mcp.executable_path)
-    mcp_running = process_count("qrenderdoc.exe") == 1 or process_count("RenderDocMCP.exe") > 0
+    mcp_process_running = (
+        process_count("qrenderdoc.exe") == 1
+        or process_count("RenderDocMCP.exe") > 0
+        or process_count("renderdoc-mcp.exe") > 0
+    )
+    if mcp_runtime is None:
+        mcp_running = mcp_process_running
+        mcp_runtime_detail = "not probed"
+    else:
+        mcp_running = mcp_runtime.reachable
+        mcp_runtime_detail = mcp_runtime.detail
     session_attached = bool(cfg.capture.active_session_id or cfg.capture.active_launch_id)
     config_preview = asdict(cfg)
     if config_preview.get("ai", {}).get("api_key"):
@@ -36,6 +92,8 @@ def build_status_snapshot(cfg: AppConfig, process_counts: dict[str, int] | None 
         "mcp": {
             "ready": mcp_ready,
             "running": mcp_running,
+            "process_running": mcp_runtime.process_running if mcp_runtime is not None else mcp_process_running,
+            "runtime_detail": mcp_runtime_detail,
             "version": cfg.mcp.release_tag or cfg.mcp.asset_name or "unknown",
             "path": cfg.mcp.executable_path,
             "extension_loaded": mcp_running and not cfg.mcp.extension_patch_restart_required,

@@ -64,6 +64,16 @@ def setup_environment(ctx: OperationContext) -> None:
     ctx.save()
 
 
+def setup_mcp(ctx: OperationContext) -> Path:
+    cfg = ctx.cfg()
+    ctx.emit("checking RenderDocMCP", 10)
+    mcp_exe = McpInstaller(cfg).ensure_installed()
+    cfg.mcp.executable_path = str(mcp_exe)
+    ctx.emit("RenderDocMCP setup complete", 100)
+    ctx.save()
+    return mcp_exe
+
+
 def check_environment(ctx: OperationContext) -> dict:
     cfg = ctx.cfg()
     before = asdict(cfg)
@@ -145,9 +155,9 @@ def start_mcp(ctx: OperationContext) -> FileIpcMcpClient:
     return client
 
 
-def stop_mcp(ctx: OperationContext) -> None:
+def stop_mcp(ctx: OperationContext, force_release_session: bool = False) -> None:
     cfg = ctx.cfg()
-    if cfg.capture.active_session_id or cfg.capture.active_launch_id:
+    if (cfg.capture.active_session_id or cfg.capture.active_launch_id) and not force_release_session:
         raise UserActionRequired("Active capture session exists. Release the session before stopping MCP.")
     executable_path = cfg.mcp.executable_path or "RenderDocMCP.exe"
     stop_standalone_mcp_bridge(executable_path)
@@ -157,8 +167,8 @@ def stop_mcp(ctx: OperationContext) -> None:
     release_session(ctx)
 
 
-def restart_mcp(ctx: OperationContext) -> FileIpcMcpClient:
-    stop_mcp(ctx)
+def restart_mcp(ctx: OperationContext, force_release_session: bool = False) -> FileIpcMcpClient:
+    stop_mcp(ctx, force_release_session=force_release_session)
     client = start_mcp(ctx)
     ctx.save()
     return client

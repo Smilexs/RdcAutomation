@@ -263,13 +263,17 @@ def test_runtime_executable_uses_recorded_release_install_without_fetching_lates
     assert installer.runtime_executable() == exe
 
 
-def test_runtime_executable_rejects_exe_without_release_setup_record(tmp_path):
+def test_runtime_executable_accepts_existing_exe_without_release_setup_record(tmp_path):
     exe = tmp_path / "RenderDocMCP.exe"
     exe.write_bytes(b"exe")
     cfg = AppConfig.default()
     cfg.mcp.executable_path = str(exe)
 
-    installer = McpInstaller(cfg)
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: (_ for _ in ()).throw(AssertionError("runtime path must not query GitHub")),
+        downloader=lambda url, target: (_ for _ in ()).throw(AssertionError("runtime path must not download")),
+        runner=lambda args, check: (_ for _ in ()).throw(AssertionError("runtime path must not run installer")),
+    )
 
-    with pytest.raises(FileNotFoundError, match="rdc-auto setup"):
-        installer.runtime_executable()
+    assert installer.runtime_executable() == exe

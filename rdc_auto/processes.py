@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 from typing import Callable
@@ -31,6 +32,7 @@ def count_processes(image_name: str, runner: Runner = subprocess.run) -> int:
             capture_output=True,
             text=True,
             check=False,
+            **hidden_console_kwargs(),
         )
     except OSError:
         return 0
@@ -48,6 +50,7 @@ def terminate_process_tree(image_name: str, runner: Runner = subprocess.run) -> 
             capture_output=True,
             text=True,
             check=False,
+            **hidden_console_kwargs(),
         )
     except OSError:
         return
@@ -58,3 +61,22 @@ def terminate_process_tree(image_name: str, runner: Runner = subprocess.run) -> 
 
 def executable_name(path: str | Path) -> str:
     return Path(path).name
+
+
+def hidden_console_kwargs() -> dict:
+    if not sys.platform.startswith("win"):
+        return {}
+
+    kwargs = {}
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+
+    startupinfo_type = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_type is not None:
+        startupinfo = startupinfo_type()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        kwargs["startupinfo"] = startupinfo
+
+    return kwargs

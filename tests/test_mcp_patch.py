@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import py_compile
 from pathlib import Path
 
 from rdc_auto.mcp_patch import patch_renderdoc_mcp_extension
@@ -205,3 +206,41 @@ def test_patch_renderdoc_mcp_extension_is_idempotent(tmp_path):
         path.write_text("# rdc-auto-capture-connect-patch-v2\n", encoding="utf-8")
 
     assert patch_renderdoc_mcp_extension(exe) is False
+
+
+def test_patch_renderdoc_mcp_extension_repairs_corrupted_dispatcher_block(tmp_path):
+    exe = tmp_path / "renderdoc-mcp.exe"
+    exe.write_bytes(b"exe")
+    extension = tmp_path / "renderdoc_extension"
+    extension.mkdir()
+    socket_server = extension / "socket_server.py"
+    socket_server.write_text(
+        '''# rdc-auto-renderdocmcp-ui-thread-patch-v1
+class MCPBridgeServer(object):
+    def __init__(self, host, port, handler, dispatcher=None):
+        self.handler = handler
+        self.dispatcher = dispatcher
+        self.dispatcher = dispatcher
+
+    def _poll_request(self):
+        try:
+            if self.dispatcher is not None:
+                response = self.dispatcher.call(self.handler.handle, request)
+            else:
+                if self.dispatcher is not None:
+                response = self.dispatcher.call(self.handler.handle, request)
+            else:
+                response = self.handler.handle(request)
+        except Exception:
+            response = None
+''',
+        encoding="utf-8",
+    )
+
+    assert patch_renderdoc_mcp_extension(exe) is True
+
+    repaired = socket_server.read_text(encoding="utf-8")
+    assert "self.dispatcher = dispatcher\n        self.dispatcher = dispatcher" not in repaired
+    assert "if self.dispatcher is not None:\n                response = self.dispatcher.call" in repaired
+    assert "else:\n                response = self.handler.handle(request)" in repaired
+    py_compile.compile(str(socket_server), doraise=True)
