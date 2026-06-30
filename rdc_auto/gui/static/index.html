@@ -30,7 +30,9 @@
 
     body {
       margin: 0;
+      height: 100vh;
       min-height: 100vh;
+      overflow: hidden;
       color: var(--ink);
       background: var(--bg);
     }
@@ -49,13 +51,18 @@
     .app {
       display: grid;
       grid-template-columns: 260px minmax(0, 1fr);
+      height: 100vh;
       min-height: 100vh;
+      overflow: hidden;
     }
 
     .sidebar {
+      position: sticky;
+      top: 0;
       display: flex;
       flex-direction: column;
       gap: 24px;
+      height: 100vh;
       padding: 28px 20px;
       background: var(--nav);
       color: #f9fafb;
@@ -129,6 +136,8 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       min-width: 0;
+      height: 100vh;
+      overflow-y: auto;
       padding: 28px 32px 24px;
     }
 
@@ -733,15 +742,26 @@
     }
 
     @media (max-width: 760px) {
+      body {
+        height: auto;
+        overflow: auto;
+      }
+
       .app {
         display: block;
+        height: auto;
+        overflow: visible;
       }
 
       .sidebar {
+        position: static;
+        height: auto;
         min-height: auto;
       }
 
       .main {
+        height: auto;
+        overflow: visible;
         padding: 22px 16px;
       }
 
@@ -1388,10 +1408,10 @@
     async function persistCapturePaths() {
       if (!window.RdcBackend.available()) return;
       const rdcPath = ($("#rdcPath")?.value || $("#eidRdcPath")?.value || "").trim();
-      const outputDir = ($("#exportOut")?.value || "").trim();
       const response = await callBackend("save_capture_paths", {
         rdc_path: rdcPath,
-        output_dir: outputDir
+        capture_output_dir: $("#captureOut")?.value || "",
+        export_output_dir: $("#exportOut")?.value || ""
       });
       if (response.ok) applyBackendStatus(response.data);
     }
@@ -1536,7 +1556,8 @@
       setValueIfPresent("mumuRoot", mumu.root_dir);
       setValueIfPresent("vmIndex", mumu.vm_index);
       setValueIfPresent("mcpPath", mcp.path);
-      setValueIfPresent("captureOut", paths.last_output_dir);
+      setValueIfPresent("captureOut", paths.capture_output_dir || paths.last_output_dir);
+      setValueIfPresent("exportOut", paths.export_output_dir);
       const preview = $("#configPreview");
       if (preview && snapshot.config_preview) preview.value = JSON.stringify(snapshot.config_preview, null, 2);
       updateStatus();
@@ -1702,6 +1723,9 @@
           last_output_dir: $("#captureOut")?.value || "",
           last_rdc_path: state.lastRdcPath,
           active_session_id: state.sessionAttached ? "prototype-session-001" : null,
+        },
+        export: {
+          last_output_dir: $("#exportOut")?.value || "",
         },
       };
       const preview = $("#configPreview");
@@ -1949,6 +1973,9 @@
             const saveResponse = await callBackend("save_environment", collectEnvironmentParams());
             if (!saveResponse.ok) return;
             applyBackendStatus(saveResponse.data);
+          }
+          if (action === "export") {
+            await persistCapturePaths();
           }
           const params = collectActionParams(action);
           const progressSelector = progressSelectorForAction(action);
@@ -2295,7 +2322,7 @@
       if (event.key === "Enter") handleAction("send-chat");
     });
 
-    ["renderdocPath", "mcpPath", "mcpReleaseTag", "mcpMode", "mumuRoot", "vmIndex", "captureOut"].forEach((id) => {
+    ["renderdocPath", "mcpPath", "mcpReleaseTag", "mcpMode", "mumuRoot", "vmIndex", "captureOut", "exportOut"].forEach((id) => {
       const node = document.getElementById(id);
       if (node) {
         node.addEventListener("input", updateConfigPreview);
@@ -2311,6 +2338,11 @@
         renderRecent();
       });
       captureOutNode.addEventListener("change", refreshRecentRdcFiles);
+      captureOutNode.addEventListener("change", persistCapturePaths);
+    }
+    const exportOutNode = document.getElementById("exportOut");
+    if (exportOutNode) {
+      exportOutNode.addEventListener("change", persistCapturePaths);
     }
     ["rdcPath", "eidRdcPath"].forEach((id) => {
       const node = document.getElementById(id);

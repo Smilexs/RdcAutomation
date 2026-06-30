@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -113,6 +114,8 @@ def build_status_snapshot(
         "paths": {
             "last_rdc_path": cfg.capture.last_rdc_path,
             "last_output_dir": cfg.capture.last_output_dir,
+            "capture_output_dir": cfg.capture.last_output_dir,
+            "export_output_dir": cfg.export.last_output_dir,
         },
         "ai": {
             "provider": cfg.ai.provider,
@@ -162,6 +165,9 @@ def _mcp_display_version(cfg: AppConfig) -> str:
     if cfg.mcp.release_tag:
         return cfg.mcp.release_tag
     if cfg.mcp.asset_name:
+        match = re.search(r"RenderDocMCP-Setup-v?([0-9]+(?:\.[0-9]+)+)", cfg.mcp.asset_name, re.IGNORECASE)
+        if match:
+            return f"v{match.group(1)}"
         return cfg.mcp.asset_name
     if cfg.mcp.executable_path:
         return "版本未记录"

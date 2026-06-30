@@ -101,6 +101,10 @@ class GuiBridge:
             cfg = load_config()
             if "rdc_path" in payload:
                 cfg.capture.last_rdc_path = str(payload.get("rdc_path", "")).strip()
+            if "capture_output_dir" in payload:
+                cfg.capture.last_output_dir = str(payload.get("capture_output_dir", "")).strip()
+            if "export_output_dir" in payload:
+                cfg.export.last_output_dir = str(payload.get("export_output_dir", "")).strip()
             if "output_dir" in payload:
                 cfg.capture.last_output_dir = str(payload.get("output_dir", "")).strip()
             save_config(cfg)

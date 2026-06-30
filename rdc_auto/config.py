@@ -11,6 +11,8 @@ APP_DIR_NAME = "RdcAutomation"
 MCP_RELEASE_API_URL = "https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest"
 LEGACY_MUMU_RELATIVE_EXE = "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
 MUMU_RELATIVE_EXE = "nx_main\\MuMuNxMain.exe"
+DEFAULT_CAPTURE_OUTPUT_DIR = "D:\\RdcCaptures"
+DEFAULT_EXPORT_OUTPUT_DIR = "D:\\RdcExports"
 
 
 @dataclass
@@ -45,12 +47,17 @@ class EmulatorConfig:
 
 @dataclass
 class CaptureConfig:
-    last_output_dir: str = ""
+    last_output_dir: str = DEFAULT_CAPTURE_OUTPUT_DIR
     last_rdc_path: str = ""
     active_session_id: str | None = None
     active_launch_id: str = ""
     active_pid: int | None = None
     active_session_started_at: str | None = None
+
+
+@dataclass
+class ExportConfig:
+    last_output_dir: str = DEFAULT_EXPORT_OUTPUT_DIR
 
 
 @dataclass
@@ -74,6 +81,7 @@ class AppConfig:
     mcp: McpConfig = field(default_factory=McpConfig)
     emulator: EmulatorConfig = field(default_factory=EmulatorConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
+    export: ExportConfig = field(default_factory=ExportConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     ai: AiConfig = field(default_factory=AiConfig)
 
@@ -126,6 +134,7 @@ def _from_dict(raw: dict[str, Any]) -> AppConfig:
         mcp=McpConfig(**{**asdict(default.mcp), **raw.get("mcp", {})}),
         emulator=EmulatorConfig(**emulator_raw),
         capture=CaptureConfig(**{**asdict(default.capture), **raw.get("capture", {})}),
+        export=ExportConfig(**{**asdict(default.export), **raw.get("export", {})}),
         gui=GuiConfig(**{**asdict(default.gui), **raw.get("gui", {})}),
         ai=AiConfig(**{**asdict(default.ai), **raw.get("ai", {})}),
     )

@@ -116,6 +116,27 @@ def test_build_status_snapshot_uses_readable_mcp_version_fallback_when_configure
     assert snapshot["mcp"]["version"] == "版本未记录"
 
 
+def test_build_status_snapshot_formats_mcp_setup_asset_name_as_version():
+    cfg = AppConfig.default()
+    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.1.exe"
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["mcp"]["version"] == "v1.0.1"
+
+
+def test_build_status_snapshot_exposes_distinct_capture_and_export_output_dirs():
+    cfg = AppConfig.default()
+    cfg.capture.last_output_dir = "D:\\RdcCaptures"
+    cfg.export.last_output_dir = "D:\\RdcExports"
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["paths"]["capture_output_dir"] == "D:\\RdcCaptures"
+    assert snapshot["paths"]["export_output_dir"] == "D:\\RdcExports"
+    assert snapshot["paths"]["last_output_dir"] == "D:\\RdcCaptures"
+
+
 def test_build_status_snapshot_masks_saved_ai_api_key():
     cfg = AppConfig.default()
     cfg.ai.api_key = "sk-secret"
@@ -179,6 +200,25 @@ def test_bridge_save_capture_paths_updates_last_rdc_and_output_dir(tmp_path, mon
     assert cfg.capture.last_rdc_path == str(rdc_path)
     assert cfg.capture.last_output_dir == str(output_dir)
     assert response["data"]["paths"]["last_rdc_path"] == str(rdc_path)
+
+
+def test_bridge_save_capture_paths_keeps_capture_and_export_output_dirs_separate(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_capture_paths(
+        {
+            "capture_output_dir": "D:\\RdcCaptures",
+            "export_output_dir": "D:\\RdcExports",
+        }
+    )
+
+    assert response["ok"] is True
+    cfg = load_config()
+    assert cfg.capture.last_output_dir == "D:\\RdcCaptures"
+    assert cfg.export.last_output_dir == "D:\\RdcExports"
+    assert response["data"]["paths"]["capture_output_dir"] == "D:\\RdcCaptures"
+    assert response["data"]["paths"]["export_output_dir"] == "D:\\RdcExports"
 
 
 def test_bridge_start_job_supports_renderdoc_and_mcp_setup(monkeypatch):

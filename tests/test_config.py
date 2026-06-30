@@ -24,6 +24,8 @@ def test_load_config_returns_defaults_when_missing(tmp_path, monkeypatch):
     assert cfg.emulator.type == "mumu12"
     assert cfg.emulator.exe_relative_path == "nx_main\\MuMuNxMain.exe"
     assert cfg.emulator.graphics_api == "vulkan"
+    assert cfg.capture.last_output_dir == "D:\\RdcCaptures"
+    assert cfg.export.last_output_dir == "D:\\RdcExports"
 
 
 def test_save_and_reload_config(tmp_path, monkeypatch):
@@ -31,12 +33,14 @@ def test_save_and_reload_config(tmp_path, monkeypatch):
     cfg = AppConfig.default()
     cfg.emulator.root_dir = "D:\\MuMu"
     cfg.capture.last_output_dir = "D:\\Captures"
+    cfg.export.last_output_dir = "D:\\Exports"
 
     save_config(cfg)
     loaded = load_config()
 
     assert loaded.emulator.root_dir == "D:\\MuMu"
     assert loaded.capture.last_output_dir == "D:\\Captures"
+    assert loaded.export.last_output_dir == "D:\\Exports"
     data = json.loads(config_path().read_text(encoding="utf-8"))
     assert data["emulator"]["graphics_api"] == "vulkan"
 
@@ -73,6 +77,7 @@ def test_legacy_config_without_gui_ai_loads_defaults(tmp_path, monkeypatch):
 
     assert cfg.renderdoc.qrenderdoc_path == "D:\\RenderDoc\\qrenderdoc.exe"
     assert cfg.capture.last_output_dir == "D:\\Captures"
+    assert cfg.export.last_output_dir == "D:\\RdcExports"
     assert cfg.gui.window_width == 1320
     assert cfg.gui.window_height == 860
     assert cfg.gui.last_view == "dashboard"

@@ -21,6 +21,30 @@ def test_gui_index_is_packaged():
     assert "window.pywebview" in html
 
 
+def test_gui_index_keeps_sidebar_fixed_while_main_content_scrolls():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "body {" in html
+    assert "overflow: hidden;" in html[html.index("body {") : html.index("button,", html.index("body {"))]
+    assert "height: 100vh;" in html[html.index(".app {") : html.index(".sidebar {")]
+    assert "position: sticky;" in html[html.index(".sidebar {") : html.index(".brand {")]
+    assert "overflow-y: auto;" in html[html.index(".main {") : html.index(".topbar {")]
+    assert "@media (max-width: 760px)" in html
+    mobile = html[html.index("@media (max-width: 760px)") :]
+    assert "overflow: auto;" in mobile
+
+
+def test_gui_index_uses_distinct_capture_and_export_output_defaults():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert '<input id="captureOut" value="D:\\RdcCaptures" />' in html
+    assert '<input id="exportOut" value="D:\\RdcExports" />' in html
+    assert "paths.capture_output_dir" in html
+    assert "paths.export_output_dir" in html
+    assert "capture_output_dir: $(\"#captureOut\")?.value || \"\"" in html
+    assert "export_output_dir: $(\"#exportOut\")?.value || \"\"" in html
+
+
 def test_gui_index_has_backend_action_mapping():
     html = gui_index_path().read_text(encoding="utf-8")
 
