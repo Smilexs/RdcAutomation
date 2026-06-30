@@ -30,14 +30,14 @@ Use this Skill to drive the `rdc-auto` CLI. Keep the Skill thin: ask for missing
 - RenderDoc installer is downloaded from `https://renderdoc.org/builds` when RenderDoc is missing.
 - RenderDocMCP is installed from the latest GitHub release setup executable at `https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest`.
 - The only supported emulator in the first release is MuMu12.
-- MuMu12 executable path is `<MuMu12Root>\MuMuPlayer-12.0\nx_main\MuMuNxMain.exe`.
+- MuMu12 root is the directory that directly contains `nx_main`; the executable path is `<MuMu12Root>\nx_main\MuMuNxMain.exe`.
 - MuMu12 must use Vulkan.
 
 ## Error Handling
 
 - RenderDoc missing: run `rdc-auto setup`.
 - RenderDocMCP bridge unavailable: run `rdc-auto setup` and ask the user to restart RenderDoc if needed.
-- MuMu12 root invalid: ask for the MuMu12 root installation directory.
+- MuMu12 root invalid: ask for the directory that directly contains `nx_main`.
 - MuMu12 already running: ask the user to close it before attach.
 - Vulkan not confirmed: ask the user to switch MuMu12 to Vulkan.
 - Capture session expired: run `rdc-auto attach` again.

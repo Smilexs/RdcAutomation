@@ -9,7 +9,8 @@ from typing import Any
 
 APP_DIR_NAME = "RdcAutomation"
 MCP_RELEASE_API_URL = "https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest"
-MUMU_RELATIVE_EXE = "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
+LEGACY_MUMU_RELATIVE_EXE = "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
+MUMU_RELATIVE_EXE = "nx_main\\MuMuNxMain.exe"
 
 
 @dataclass
@@ -117,10 +118,13 @@ def save_config(cfg: AppConfig, path: Path | None = None) -> None:
 
 def _from_dict(raw: dict[str, Any]) -> AppConfig:
     default = AppConfig.default()
+    emulator_raw = {**asdict(default.emulator), **raw.get("emulator", {})}
+    if emulator_raw.get("type") == "mumu12" and emulator_raw.get("exe_relative_path") == LEGACY_MUMU_RELATIVE_EXE:
+        emulator_raw["exe_relative_path"] = MUMU_RELATIVE_EXE
     return AppConfig(
         renderdoc=RenderDocConfig(**{**asdict(default.renderdoc), **raw.get("renderdoc", {})}),
         mcp=McpConfig(**{**asdict(default.mcp), **raw.get("mcp", {})}),
-        emulator=EmulatorConfig(**{**asdict(default.emulator), **raw.get("emulator", {})}),
+        emulator=EmulatorConfig(**emulator_raw),
         capture=CaptureConfig(**{**asdict(default.capture), **raw.get("capture", {})}),
         gui=GuiConfig(**{**asdict(default.gui), **raw.get("gui", {})}),
         ai=AiConfig(**{**asdict(default.ai), **raw.get("ai", {})}),

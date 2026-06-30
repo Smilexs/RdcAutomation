@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from .config import MUMU_RELATIVE_EXE
+from .errors import DependencyMissing
 
 
 def mumu_exe_path(root: str | Path, relative_exe: str | Path = MUMU_RELATIVE_EXE) -> Path:
@@ -12,15 +13,7 @@ def mumu_exe_path(root: str | Path, relative_exe: str | Path = MUMU_RELATIVE_EXE
 
 def canonical_mumu_root(root: str | Path, relative_exe: str | Path = MUMU_RELATIVE_EXE) -> Path:
     path = Path(root)
-    candidates = [path]
-
-    if path.name.lower() == "mumuplayer-12.0":
-        candidates.append(path.parent)
-    if path.name.lower() == "nx_main" and path.parent.name.lower() == "mumuplayer-12.0":
-        candidates.append(path.parent.parent)
-    if path.name.lower() == "mumunxmain.exe" and path.parent.name.lower() == "nx_main":
-        candidates.append(path.parent.parent.parent)
-
+    candidates = [path.parent, path] if path.name.lower() == "nx_main" else [path]
     for candidate in candidates:
         if mumu_exe_path(candidate, relative_exe).is_file():
             return candidate
@@ -50,3 +43,18 @@ def find_renderdoc_install() -> dict[str, str]:
                 "renderdoccmd_path": str(renderdoccmd) if renderdoccmd.is_file() else "",
             }
     return {"install_dir": "", "qrenderdoc_path": "", "renderdoccmd_path": ""}
+
+
+def renderdoc_install_from_qrenderdoc(qrenderdoc_path: str | Path) -> dict[str, str]:
+    qrenderdoc = Path(qrenderdoc_path)
+    if qrenderdoc.name.lower() != "qrenderdoc.exe":
+        raise DependencyMissing(f"Configured qrenderdoc.exe path must point to qrenderdoc.exe: {qrenderdoc}")
+    if not qrenderdoc.is_file():
+        raise DependencyMissing(f"Configured qrenderdoc.exe was not found: {qrenderdoc}")
+    install_dir = qrenderdoc.parent
+    renderdoccmd = install_dir / "renderdoccmd.exe"
+    return {
+        "install_dir": str(install_dir),
+        "qrenderdoc_path": str(qrenderdoc),
+        "renderdoccmd_path": str(renderdoccmd) if renderdoccmd.is_file() else "",
+    }

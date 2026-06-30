@@ -10,6 +10,7 @@ from rdc_auto.errors import UserActionRequired
 from rdc_auto.export_assets import ExportService, _parse_event_id
 from rdc_auto.gui.jobs import JobManager
 from rdc_auto.gui.status import build_status_snapshot, probe_mcp_runtime
+from rdc_auto.paths import canonical_mumu_root
 from rdc_auto.operations import (
     OperationContext,
     attach,
@@ -19,21 +20,25 @@ from rdc_auto.operations import (
     release_session,
     restart_mcp,
     setup_environment,
+    setup_renderdoc,
     setup_mcp,
     mcp_client,
     start_mcp,
     stop_mcp,
 )
+from rdc_auto.processes import process_ids, terminate_process_tree_by_pid
 
 
 EmitProgress = Callable[[str, int], None]
 JobFn = Callable[[EmitProgress], dict[str, Any]]
+MCP_RUNTIME_IMAGES = ("qrenderdoc.exe", "RenderDocMCP.exe", "renderdoc-mcp.exe")
 
 
 class GuiBridge:
     def __init__(self, run_jobs_inline: bool = False):
         self._window = None
         self.jobs = JobManager(run_inline=run_jobs_inline)
+        self._owned_mcp_pids: dict[str, set[int]] = {image: set() for image in MCP_RUNTIME_IMAGES}
 
     def bind_window(self, window) -> None:
         self._window = window
@@ -50,7 +55,14 @@ class GuiBridge:
             payload = payload or {}
             cfg = load_config()
             cfg.renderdoc.qrenderdoc_path = str(payload.get("renderdoc_path", "")).strip()
-            cfg.emulator.root_dir = str(payload.get("mumu_root", "")).strip()
+            mumu_root = str(payload.get("mumu_root", "")).strip()
+            if mumu_root:
+                try:
+                    cfg.emulator.root_dir = str(canonical_mumu_root(mumu_root, cfg.emulator.exe_relative_path))
+                except FileNotFoundError:
+                    cfg.emulator.root_dir = mumu_root
+            else:
+                cfg.emulator.root_dir = ""
             cfg.emulator.vm_index = str(payload.get("vm_index", "")).strip()
             cfg.emulator.graphics_api = str(payload.get("graphics_api", "vulkan")).strip() or "vulkan"
             save_config(cfg)
@@ -105,11 +117,16 @@ class GuiBridge:
             actions: dict[str, JobFn] = {
                 "check_environment": lambda emit: check_environment(OperationContext(progress=emit)),
                 "setup": lambda emit: _completed(setup_environment(OperationContext(progress=emit))),
+                "setup_renderdoc": lambda emit: _completed(setup_renderdoc(OperationContext(progress=emit))),
                 "setup_mcp": lambda emit: _completed(setup_mcp(OperationContext(progress=emit))),
-                "start_mcp": lambda emit: _running(start_mcp(OperationContext(progress=emit))),
-                "stop_mcp": lambda emit: _stopped(stop_mcp(OperationContext(progress=emit))),
+                "start_mcp": lambda emit: _running(
+                    self._track_mcp_runtime_start(lambda: start_mcp(OperationContext(progress=emit)))
+                ),
+                "stop_mcp": lambda emit: _stopped(self._stop_mcp_from_gui(OperationContext(progress=emit))),
                 "restart_mcp": lambda emit: _running(
-                    restart_mcp(OperationContext(progress=emit), force_release_session=True)
+                    self._track_mcp_runtime_start(
+                        lambda: restart_mcp(OperationContext(progress=emit), force_release_session=True)
+                    )
                 ),
                 "attach": lambda emit: {
                     "launch_id": str(
@@ -130,7 +147,7 @@ class GuiBridge:
                         )
                     )
                 },
-                "export": lambda emit: _export_result(params, emit),
+                "export": lambda emit: self._track_mcp_runtime_start(lambda: _export_result(params, emit)),
                 "release_session": lambda emit: _released(release_session(OperationContext(progress=emit))),
             }
             fn = actions.get(action)
@@ -154,7 +171,7 @@ class GuiBridge:
             if not rdc_path:
                 raise ValueError("rdc_path is required.")
             cfg = load_config()
-            rows = ExportService(mcp_client(cfg)).list_draw_calls(rdc_path)
+            rows = self._track_mcp_runtime_start(lambda: ExportService(mcp_client(cfg)).list_draw_calls(rdc_path))
             return self._ok({"rows": rows}, logs=[f"loaded {len(rows)} EID rows"])
         except Exception as exc:
             return self._fail(exc)
@@ -169,7 +186,9 @@ class GuiBridge:
                 raise ValueError("rdc_path is required.")
             if not output_dir:
                 raise ValueError("output_dir is required.")
-            result = ExportService(mcp_client(load_config())).export_mesh_for_event(rdc_path, output_dir, event_id)
+            result = self._track_mcp_runtime_start(
+                lambda: ExportService(mcp_client(load_config())).export_mesh_for_event(rdc_path, output_dir, event_id)
+            )
             return self._ok(result, logs=[f"exported model for EID {event_id}"])
         except Exception as exc:
             return self._fail(exc)
@@ -184,7 +203,11 @@ class GuiBridge:
                 raise ValueError("rdc_path is required.")
             if not output_dir:
                 raise ValueError("output_dir is required.")
-            result = ExportService(mcp_client(load_config())).export_bound_textures_for_event(rdc_path, output_dir, event_id)
+            result = self._track_mcp_runtime_start(
+                lambda: ExportService(mcp_client(load_config())).export_bound_textures_for_event(
+                    rdc_path, output_dir, event_id
+                )
+            )
             texture_count = len(result.get("textures", []))
             return self._ok(result, logs=[f"exported {texture_count} textures for EID {event_id}"])
         except Exception as exc:
@@ -220,6 +243,26 @@ class GuiBridge:
         except Exception as exc:
             return self._fail(exc)
 
+    def list_rdc_files(self, payload: dict | None = None) -> dict:
+        try:
+            payload = payload or {}
+            raw_directory = str(payload.get("directory", "")).strip()
+            if not raw_directory:
+                files: list[Path] = []
+            else:
+                directory = Path(raw_directory)
+                if not directory.exists() or not directory.is_dir():
+                    files = []
+                else:
+                    files = sorted(
+                        (path for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".rdc"),
+                        key=lambda path: (path.stat().st_mtime, path.name.lower()),
+                        reverse=True,
+                    )
+            return self._ok({"files": [str(path) for path in files]}, logs=[f"found {len(files)} RDC files"])
+        except Exception as exc:
+            return self._fail(exc)
+
     def open_path(self, payload: dict) -> dict:
         try:
             payload = payload or {}
@@ -233,6 +276,34 @@ class GuiBridge:
             return self._ok({"opened": str(path)})
         except Exception as exc:
             return self._fail(exc)
+
+    def shutdown(self, payload: dict | None = None) -> dict:
+        try:
+            stopped: list[int] = []
+            for image_name, owned_pids in self._owned_mcp_pids.items():
+                live_owned_pids = owned_pids.intersection(process_ids(image_name))
+                for pid in sorted(live_owned_pids):
+                    terminate_process_tree_by_pid(pid)
+                    stopped.append(pid)
+                owned_pids.difference_update(live_owned_pids)
+            if stopped:
+                release_session(OperationContext())
+            return self._ok({"stopped_pids": stopped})
+        except Exception as exc:
+            return self._fail(exc)
+
+    def _track_mcp_runtime_start(self, fn: Callable[[], Any]) -> Any:
+        before = _mcp_pid_snapshot()
+        result = fn()
+        after = _mcp_pid_snapshot()
+        for image_name in MCP_RUNTIME_IMAGES:
+            self._owned_mcp_pids[image_name].update(after[image_name] - before[image_name])
+        return result
+
+    def _stop_mcp_from_gui(self, ctx: OperationContext) -> None:
+        stop_mcp(ctx)
+        for owned_pids in self._owned_mcp_pids.values():
+            owned_pids.clear()
 
     @staticmethod
     def _ok(data, logs: list[str] | None = None) -> dict:
@@ -265,6 +336,10 @@ def _stopped(result: Any) -> dict[str, bool]:
 
 def _released(result: Any) -> dict[str, bool]:
     return {"released": True}
+
+
+def _mcp_pid_snapshot() -> dict[str, set[int]]:
+    return {image_name: set(process_ids(image_name)) for image_name in MCP_RUNTIME_IMAGES}
 
 
 def _payload_bool(value: Any) -> bool:

@@ -30,5 +30,8 @@ def main(debug: bool = False) -> int:
         min_size=options["min_size"],
     )
     bridge.bind_window(window)
-    webview.start(debug=debug)
+    try:
+        webview.start(debug=debug)
+    finally:
+        bridge.shutdown({})
     return 0

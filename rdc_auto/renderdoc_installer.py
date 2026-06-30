@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Callable
 
 from .config import AppConfig, app_data_dir
-from .paths import find_renderdoc_install
+from .errors import DependencyMissing
+from .paths import find_renderdoc_install, renderdoc_install_from_qrenderdoc
 
 
 BUILDS_URL = "https://renderdoc.org/builds"
@@ -52,7 +53,8 @@ class RenderDocInstaller:
         self.version_reader = version_reader or self._read_installed_version
 
     def ensure_installed(self) -> bool:
-        found = self.finder()
+        configured_qrenderdoc = self.config.renderdoc.qrenderdoc_path.strip()
+        found = renderdoc_install_from_qrenderdoc(configured_qrenderdoc) if configured_qrenderdoc else self.finder()
         if found.get("qrenderdoc_path"):
             detected_version = self.version_reader(found)
             self.config.renderdoc.version = detected_version
@@ -60,6 +62,12 @@ class RenderDocInstaller:
                 self.config.renderdoc.install_dir = ""
                 self.config.renderdoc.qrenderdoc_path = ""
                 self.config.renderdoc.renderdoccmd_path = ""
+                if configured_qrenderdoc:
+                    version_label = detected_version or "unknown"
+                    raise DependencyMissing(
+                        f"Configured RenderDoc version is {version_label}, but v{RENDERDOC_VERSION} is required: "
+                        f"{configured_qrenderdoc}"
+                    )
                 return False
             self.config.renderdoc.version = RENDERDOC_VERSION
             self.config.renderdoc.install_dir = found.get("install_dir", "")

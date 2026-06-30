@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
+
 from rdc_auto.config import AppConfig
+from rdc_auto.errors import DependencyMissing
 from rdc_auto.renderdoc_installer import RenderDocInstaller, parse_renderdoc_version, parse_v144_windows_x64_url
 
 
@@ -57,6 +60,35 @@ def test_installer_updates_config_when_existing_renderdoc_found(tmp_path):
     assert installer.ensure_installed() is True
     assert cfg.renderdoc.qrenderdoc_path == str(qrenderdoc)
     assert cfg.renderdoc.renderdoccmd_path == str(renderdoccmd)
+
+
+def test_installer_prefers_configured_qrenderdoc_path_and_syncs_install_metadata(tmp_path):
+    qrenderdoc = tmp_path / "CustomRenderDoc" / "qrenderdoc.exe"
+    renderdoccmd = tmp_path / "CustomRenderDoc" / "renderdoccmd.exe"
+    qrenderdoc.parent.mkdir()
+    qrenderdoc.write_bytes(b"exe")
+    renderdoccmd.write_bytes(b"exe")
+    cfg = AppConfig.default()
+    cfg.renderdoc.qrenderdoc_path = str(qrenderdoc)
+
+    def fail_finder():
+        raise AssertionError("configured qrenderdoc.exe should be checked before default install paths")
+
+    installer = RenderDocInstaller(config=cfg, finder=fail_finder, version_reader=lambda found: "1.44")
+
+    assert installer.ensure_installed() is True
+    assert cfg.renderdoc.install_dir == str(qrenderdoc.parent)
+    assert cfg.renderdoc.qrenderdoc_path == str(qrenderdoc)
+    assert cfg.renderdoc.renderdoccmd_path == str(renderdoccmd)
+
+
+def test_installer_rejects_invalid_configured_qrenderdoc_path(tmp_path):
+    cfg = AppConfig.default()
+    cfg.renderdoc.qrenderdoc_path = str(tmp_path / "missing" / "qrenderdoc.exe")
+    installer = RenderDocInstaller(config=cfg)
+
+    with pytest.raises(DependencyMissing, match="Configured qrenderdoc.exe was not found"):
+        installer.ensure_installed()
 
 
 def test_installer_rejects_existing_renderdoc_when_version_is_not_v144(tmp_path):

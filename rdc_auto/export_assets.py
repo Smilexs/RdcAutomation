@@ -45,7 +45,11 @@ class ExportService:
                 event_id = _parse_event_id(raw_event_id)
             except (AttributeError, ValueError):
                 continue
-            rows.append({"event_id": event_id, "name": str(draw.get("name") or f"draw_{event_id}")})
+            row = {"event_id": event_id, "name": str(draw.get("name") or f"draw_{event_id}")}
+            for key in ("has_mesh", "hasMesh", "texture_count", "textureCount", "textures", "bound_textures"):
+                if key in draw:
+                    row[key] = draw[key]
+            rows.append(row)
         return rows
 
     def export_mesh_for_event(self, rdc_path: str | Path, output_dir: str | Path, event_id: object) -> dict:

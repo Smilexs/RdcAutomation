@@ -125,27 +125,6 @@
       background: var(--blue);
     }
 
-    .side-note {
-      margin-top: auto;
-      padding: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 8px;
-      background: var(--nav-soft);
-    }
-
-    .side-note strong {
-      display: block;
-      margin-bottom: 10px;
-      font-size: 15px;
-    }
-
-    .side-note span {
-      display: block;
-      color: #aab2c2;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-
     .main {
       display: grid;
       grid-template-rows: auto 1fr auto;
@@ -227,6 +206,11 @@
 
     .grid.three {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .logs-stack {
+      display: grid;
+      gap: 18px;
     }
 
     .panel {
@@ -384,6 +368,14 @@
       resize: vertical;
     }
 
+    #configPreview {
+      min-height: 190px;
+      max-height: 38vh;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
     input:focus,
     select:focus,
     textarea:focus {
@@ -411,6 +403,12 @@
       background: #ffffff;
     }
 
+    .eid-table-wrap {
+      max-height: 360px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
     table {
       width: 100%;
       min-width: 760px;
@@ -427,6 +425,9 @@
     }
 
     th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
       color: #475467;
       background: #f8fafc;
       font-weight: 700;
@@ -562,6 +563,10 @@
       overflow: hidden;
     }
 
+    .logs-stack .log-panel {
+      margin-top: 0;
+    }
+
     .log-header {
       display: flex;
       align-items: center;
@@ -588,6 +593,11 @@
       white-space: pre-wrap;
     }
 
+    .logs-stack .log-lines {
+      min-height: 220px;
+      max-height: calc(100vh - 570px);
+    }
+
     .linkish {
       border: 0;
       color: #93c5fd;
@@ -612,6 +622,16 @@
       box-shadow: var(--shadow);
       color: var(--ink);
       line-height: 1.45;
+    }
+
+    .toast.danger {
+      border-color: #fca5a5;
+      background: #fef2f2;
+      box-shadow: 0 18px 44px rgba(185, 28, 28, 0.18);
+    }
+
+    .toast.danger strong {
+      color: var(--red);
     }
 
     .toast strong {
@@ -702,10 +722,6 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .side-note {
-        display: none;
-      }
-
       .result-item {
         align-items: flex-start;
         flex-direction: column;
@@ -726,14 +742,9 @@
         <button class="nav-button" data-view-target="environment"><span class="nav-icon">⚙</span><span>环境设置</span></button>
         <button class="nav-button" data-view-target="capture"><span class="nav-icon">◉</span><span>捕捉 RDC</span></button>
         <button class="nav-button" data-view-target="export"><span class="nav-icon">↓</span><span>资源导出</span></button>
-        <button class="nav-button" data-view-target="assistant"><span class="nav-icon">AI</span><span>AI 助手</span></button>
         <button class="nav-button" data-view-target="logs"><span class="nav-icon">▣</span><span>日志与配置</span></button>
+        <button class="nav-button" data-view-target="assistant"><span class="nav-icon">AI</span><span>AI 助手</span></button>
       </nav>
-
-      <div class="side-note">
-        <strong>静态原型</strong>
-        <span>当前页面只模拟交互，不会执行 rdc-auto 命令，也不会读写本机配置。</span>
-      </div>
     </aside>
 
     <main class="main">
@@ -831,7 +842,6 @@
                 <div class="toolbar">
                   <button class="btn" data-action="check-env">检测环境</button>
                   <button class="btn teal" data-action="install-env">安装/修复</button>
-                  <button class="btn neutral" data-action="open-settings">打开配置目录</button>
                 </div>
                 <div class="progress" id="envProgress"><span></span></div>
               </div>
@@ -848,7 +858,8 @@
                 <div class="form-grid">
                   <div class="form-row full">
                     <label for="mumuRoot">MuMu12 根目录</label>
-                    <input id="mumuRoot" value="D:\Program Files\Netease\MuMu" />
+                    <input id="mumuRoot" value="D:\Program Files\Netease\MuMuPlayer" />
+                    <p class="panel-subtitle">请选择直接包含 nx_main 的目录作为 MuMu12 根目录；MuMuNxMain.exe 位于 nx_main 目录内。</p>
                   </div>
                   <div class="form-row">
                     <label for="vmIndex">VM Index</label>
@@ -1000,7 +1011,7 @@
           <div class="panel-header">
             <div>
               <h3 class="panel-title">资源导出</h3>
-              <p class="panel-subtitle">普通导出、指定 EID 模型导出、指定 EID 贴图导出均为前端模拟。</p>
+              <p class="panel-subtitle">普通导出生成贴图或模型，高级 EID 可按绘制事件导出模型或绑定贴图。</p>
             </div>
           </div>
           <div class="panel-body">
@@ -1019,9 +1030,8 @@
                   <div class="form-row">
                     <label for="assetType">导出类型</label>
                     <select id="assetType">
-                      <option value="both">贴图 + 模型</option>
-                      <option value="textures">仅贴图</option>
-                      <option value="meshes">仅模型</option>
+                      <option value="textures">所有贴图</option>
+                      <option value="meshes">所有模型</option>
                     </select>
                   </div>
                   <div class="form-row">
@@ -1055,7 +1065,7 @@
                   <button class="btn teal" data-action="export-eid-model">导出该 EID 模型</button>
                   <button class="btn success" data-action="export-eid-textures">导出该 EID 绑定贴图</button>
                 </div>
-                <div class="table-wrap">
+                <div class="table-wrap eid-table-wrap">
                   <table>
                     <thead>
                       <tr>
@@ -1140,40 +1150,27 @@
       </section>
 
       <section class="view" id="view-logs">
-        <div class="grid two">
+        <div class="logs-stack">
           <section class="panel">
             <div class="panel-header">
               <div>
                 <h3 class="panel-title">配置摘要</h3>
-                <p class="panel-subtitle">这里展示未来可写入 config.json 的关键字段。</p>
+                <p class="panel-subtitle">这里展示当前 config.json 的关键字段。</p>
               </div>
             </div>
             <div class="panel-body">
               <textarea id="configPreview" readonly></textarea>
             </div>
           </section>
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <h3 class="panel-title">原型操作</h3>
-                <p class="panel-subtitle">这些按钮只影响当前页面状态。</p>
-              </div>
+
+          <section class="log-panel" aria-label="日志">
+            <div class="log-header">
+              <h3 class="log-title">日志</h3>
+              <button class="linkish" data-action="clear-log">清空</button>
             </div>
-            <div class="panel-body toolbar">
-              <button class="btn neutral" data-action="copy-config">复制配置摘要</button>
-              <button class="btn warn" data-action="reset-prototype">重置原型状态</button>
-              <button class="btn danger" data-action="show-danger">模拟错误</button>
-            </div>
+            <div class="log-lines" id="logLines"></div>
           </section>
         </div>
-      </section>
-
-      <section class="log-panel" aria-label="底部日志">
-        <div class="log-header">
-          <h3 class="log-title">日志</h3>
-          <button class="linkish" data-action="clear-log">清空</button>
-        </div>
-        <div class="log-lines" id="logLines"></div>
       </section>
     </main>
   </div>
@@ -1217,7 +1214,7 @@
       capture: ["捕捉 RDC", "模拟 attach 模拟器与捕捉当前帧。"],
       export: ["资源导出", "模拟普通导出、指定 EID 模型导出和指定 EID 绑定贴图导出。"],
       assistant: ["AI 助手", "配置 AI Key，并用日志与配置摘要辅助排查问题。"],
-      logs: ["日志与配置", "查看模拟日志、配置摘要和原型状态。"],
+      logs: ["日志与配置", "查看运行日志和配置摘要。"],
     };
 
     const eidRows = [
@@ -1240,10 +1237,10 @@
       logLines.scrollTop = logLines.scrollHeight;
     }
 
-    function toast(title, body) {
+    function toast(title, body, variant) {
       const root = $("#toastRoot");
       const node = document.createElement("div");
-      node.className = "toast";
+      node.className = `toast ${variant || ""}`.trim();
       node.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
       root.appendChild(node);
       window.setTimeout(() => node.remove(), 3600);
@@ -1555,6 +1552,7 @@
             state.mumuReady = true;
             updateStatus();
             toast("环境检测完成", "RenderDoc、MCP、MuMu12 示例状态均为可用。");
+            log("提示：环境检测完成 - RenderDoc、MCP、MuMu12 示例状态均为可用。");
             log("setup check complete");
           });
           break;
@@ -1568,6 +1566,7 @@
             state.mumuReady = true;
             updateStatus();
             toast("安装/修复完成", "真实版本会执行 rdc-auto setup。");
+            log("提示：安装/修复完成 - 真实版本会执行 rdc-auto setup。");
             log("setup complete");
           });
           break;
@@ -1583,7 +1582,6 @@
           toast("选择器占位", "纯 HTML 原型无法可靠获取完整本机路径，接入桌面容器后再打开系统文件选择器。");
           log(`点击选择器：${action}`);
           break;
-        case "open-settings":
         case "open-export-out":
           toast("打开目录占位", "浏览器静态页不能直接打开本机目录，桌面容器或本地后端可以支持。");
           log(`请求打开目录：${action}`);
@@ -1631,22 +1629,6 @@
           break;
         case "send-chat":
           sendChat();
-          break;
-        case "copy-config":
-          navigator.clipboard?.writeText($("#configPreview").value);
-          toast("已复制", "配置摘要已复制到剪贴板。");
-          log("复制配置摘要");
-          break;
-        case "reset-prototype":
-          state.sessionAttached = false;
-          state.lastRdcPath = "D:\\RdcCaptures\\mumu12_20260617_160827.rdc";
-          updateStatus();
-          toast("已重置", "原型状态已恢复到初始示例值。");
-          log("reset prototype state");
-          break;
-        case "show-danger":
-          toast("模拟错误", "RenderDocMCP did not become ready within 30 seconds。");
-          log("ERROR RenderDocMCP did not become ready within 30 seconds");
           break;
         case "clear-log":
           $("#logLines").textContent = "";

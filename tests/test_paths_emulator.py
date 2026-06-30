@@ -10,29 +10,40 @@ from rdc_auto.emulator import EmulatorProcess, MuMu12
 from rdc_auto.paths import mumu_exe_path, validate_mumu_root
 
 
-def test_mumu_exe_path_uses_fixed_relative_path():
-    assert mumu_exe_path(Path("D:/MuMu")) == Path("D:/MuMu/MuMuPlayer-12.0/nx_main/MuMuNxMain.exe")
+def test_mumu_exe_path_uses_nx_main_under_configured_root():
+    assert mumu_exe_path(Path("D:/MuMuPlayer")) == Path("D:/MuMuPlayer/nx_main/MuMuNxMain.exe")
 
 
 def test_validate_mumu_root_accepts_existing_exe(tmp_path):
-    exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    exe = tmp_path / "nx_main" / "MuMuNxMain.exe"
     exe.parent.mkdir(parents=True)
     exe.write_text("", encoding="utf-8")
 
     assert validate_mumu_root(tmp_path) == exe
 
 
-def test_canonical_mumu_root_accepts_nested_mumu_paths(tmp_path):
+def test_canonical_mumu_root_accepts_root_or_nx_main_with_arbitrary_root_name(tmp_path):
     from rdc_auto import paths
 
-    root = tmp_path / "MuMu12"
-    exe = root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    root = tmp_path / "MuMuPlayer"
+    exe = root / "nx_main" / "MuMuNxMain.exe"
     exe.parent.mkdir(parents=True)
     exe.write_text("", encoding="utf-8")
 
     assert paths.canonical_mumu_root(root) == root
-    assert paths.canonical_mumu_root(root / "MuMuPlayer-12.0") == root
-    assert paths.canonical_mumu_root(root / "MuMuPlayer-12.0" / "nx_main") == root
+    assert paths.canonical_mumu_root(root / "nx_main") == root
+
+
+def test_canonical_mumu_root_rejects_executable_path(tmp_path):
+    from rdc_auto import paths
+
+    root = tmp_path / "MuMu12"
+    exe = root / "nx_main" / "MuMuNxMain.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        paths.canonical_mumu_root(exe)
 
 
 def test_validate_mumu_root_rejects_missing_exe(tmp_path):
@@ -99,7 +110,7 @@ def test_terminate_tree_raises_when_taskkill_fails():
 
 
 def test_mumu12_resolve_updates_config(tmp_path):
-    exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    exe = tmp_path / "nx_main" / "MuMuNxMain.exe"
     exe.parent.mkdir(parents=True)
     exe.write_text("", encoding="utf-8")
     cfg = AppConfig.default()
@@ -124,7 +135,7 @@ def test_mumu12_executable_uses_configured_relative_path(tmp_path):
 
 
 def test_mumu12_launch_spec_uses_mumu_manager_for_configured_vm_index(tmp_path):
-    main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    main_exe = tmp_path / "nx_main" / "MuMuNxMain.exe"
     manager_exe = main_exe.parent / "MuMuManager.exe"
     main_exe.parent.mkdir(parents=True)
     main_exe.write_text("", encoding="utf-8")
@@ -141,7 +152,7 @@ def test_mumu12_launch_spec_uses_mumu_manager_for_configured_vm_index(tmp_path):
 
 
 def test_mumu12_launch_spec_defaults_to_manager_vm_zero(tmp_path):
-    main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    main_exe = tmp_path / "nx_main" / "MuMuNxMain.exe"
     manager_exe = main_exe.parent / "MuMuManager.exe"
     main_exe.parent.mkdir(parents=True)
     main_exe.write_text("", encoding="utf-8")
@@ -157,8 +168,8 @@ def test_mumu12_launch_spec_defaults_to_manager_vm_zero(tmp_path):
 
 
 def test_mumu12_launch_spec_finds_shell_mumu_manager(tmp_path):
-    main_exe = tmp_path / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
-    manager_exe = tmp_path / "MuMuPlayer-12.0" / "shell" / "MuMuManager.exe"
+    main_exe = tmp_path / "nx_main" / "MuMuNxMain.exe"
+    manager_exe = tmp_path / "shell" / "MuMuManager.exe"
     main_exe.parent.mkdir(parents=True)
     manager_exe.parent.mkdir(parents=True)
     main_exe.write_text("", encoding="utf-8")

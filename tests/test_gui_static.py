@@ -27,11 +27,23 @@ def test_gui_index_has_backend_action_mapping():
     assert "function callBackend" in html
     assert "function runJobAction" in html
     assert '"check-env": "check_environment"' in html
+    assert '"install-env": "setup_renderdoc"' in html
     assert '"install-mcp": "setup_mcp"' in html
     assert '"attach": "attach"' in html
     assert '"capture": "capture"' in html
     assert '"export": "export"' in html
     assert 'window.RdcBackend.call("start_job"' in html
+
+
+def test_renderdoc_environment_actions_save_path_and_show_logged_prominent_errors():
+    html = gui_index_path().read_text(encoding="utf-8")
+    renderdoc_view = html[html.index('id="view-environment"') : html.index('data-section="mcp-config"')]
+
+    assert 'data-action="open-settings"' not in renderdoc_view
+    assert 'callBackend("save_environment", collectEnvironmentParams())' in html
+    assert "function jobFailureTitle" in html
+    assert 'toast(title, message, "danger")' in html
+    assert "提示：" in html
 
 
 def test_gui_index_deduplicates_backend_job_logs():
@@ -53,6 +65,22 @@ def test_gui_index_routes_mcp_actions_to_mcp_progress():
 
     assert 'id="mcpProgress"' in html
     assert 'return "#mcpProgress"' in html
+
+
+def test_gui_index_check_mcp_refreshes_status_without_starting_mcp():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert '"check-mcp": "start_mcp"' not in html
+    assert 'action === "refresh-status" || action === "check-mcp"' in html
+
+
+def test_gui_index_initial_mcp_state_is_not_hardcoded_running():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "mcpReady: false" in html
+    assert "mcpRunning: false" in html
+    assert "mcpExtensionLoaded: false" in html
+    assert "mcpRunning: true" not in html
 
 
 def test_gui_index_routes_choose_actions_to_backend_dialogs():
@@ -80,6 +108,111 @@ def test_gui_index_routes_eid_row_actions_to_backend_exports():
 
     assert 'rowAction.dataset.rowAction === "model" ? "export-eid-model" : "export-eid-textures"' in html
     assert "return handleAction(action);" in html
+
+
+def test_environment_cards_are_vertical_and_include_ai_config_after_mcp():
+    html = gui_index_path().read_text(encoding="utf-8")
+    environment_view = html[html.index('id="view-environment"') : html.index('id="view-capture"')]
+
+    assert '<div class="grid environment-stack">' in environment_view
+    assert '<div class="grid two">' not in environment_view
+    assert environment_view.index('data-section="mcp-config"') < environment_view.index('data-section="ai-config"')
+    assert "功能开发中" in environment_view
+
+
+def test_ai_config_is_removed_from_assistant_view():
+    html = gui_index_path().read_text(encoding="utf-8")
+    assistant_view = html[html.index('id="view-assistant"') : html.index('id="view-logs"')]
+
+    assert 'data-section="ai-config"' not in assistant_view
+    assert 'id="aiProvider"' not in assistant_view
+
+
+def test_logs_view_stacks_config_summary_above_log_panel_and_removes_prototype_actions():
+    html = gui_index_path().read_text(encoding="utf-8")
+    logs_view = html[html.index('id="view-logs"') : html.index('<div class="toast-root"', html.index('id="view-logs"'))]
+
+    assert '<div class="logs-stack">' in logs_view
+    assert logs_view.index('id="configPreview"') < logs_view.index('class="log-panel"')
+    assert 'aria-label="日志"' in logs_view
+    assert 'data-action="copy-config"' not in logs_view
+    assert 'data-action="reset-prototype"' not in logs_view
+    assert 'data-action="show-danger"' not in logs_view
+    assert "原型操作" not in logs_view
+
+
+def test_mumu_root_defaults_empty_and_has_warning_ui():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert '<input id="mumuRoot" value="" />' in html
+    assert 'id="mumuPathWarning"' in html
+    assert "请选择直接包含 nx_main 的目录作为 MuMu12 根目录" in html
+    assert "D:\\Softwares\\MuMuPlayer" in html
+    assert "保存后会自动规范为其父目录" in html
+    assert "MuMuPlayer-12.0" not in html
+    assert "MuMuNxMain.exe 完整路径" not in html
+    assert "function updateMumuPathWarning" in html
+    assert "mumu.invalid_reason" in html
+
+
+def test_mumu_root_input_clears_stale_unconfigured_warning():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "function handleMumuRootInput" in html
+    assert "state.mumuReady = Boolean(root);" in html
+    assert "updateStatus();" in html[html.index("function handleMumuRootInput") : html.index("function updateMcpCards")]
+    assert 'if (id === "mumuRoot") node.addEventListener("input", handleMumuRootInput);' in html
+    assert 'message = message || "MuMu12 路径无效' not in html
+
+
+def test_export_panel_uses_current_backend_copy_and_asset_options():
+    html = gui_index_path().read_text(encoding="utf-8")
+    export_view = html[html.index('id="view-export"') : html.index('id="view-assistant"')]
+
+    assert "普通导出使用本地后端从 RDC 导出资源，高级 EID 支持按绘制事件导出模型或绑定贴图。" in export_view
+    assert '<option value="textures">所有贴图</option>' in export_view
+    assert '<option value="meshes">所有模型</option>' in export_view
+    assert '<option value="both">' not in export_view
+    assert "前端模拟" not in export_view
+
+
+def test_export_open_directory_routes_to_backend_open_path():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'action === "open-export-out"' in html
+    assert 'callBackend("open_path", { path: $("#exportOut")?.value || "" })' in html
+    assert 'action === "open-mcp-dir"' in html
+    assert "parentDirectory($(\"#mcpPath\")?.value || \"\")" in html
+
+
+def test_eid_table_is_scrollable_and_filters_assetless_rows():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'class="table-wrap eid-table-wrap"' in html
+    assert ".eid-table-wrap" in html
+    assert "max-height: 360px" in html
+    assert "function rowHasExportableAsset" in html
+    assert "rows.map(normalizeEidRow).filter(rowHasExportableAsset)" in html
+
+
+def test_dashboard_copy_and_quick_flow_are_navigation_first():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "按顺序完成检查、连接、捕捉和导出。" in html
+    assert "面向普通用户的一键式操作入口。" not in html
+    assert 'data-action="quick-attach"' not in html
+    assert 'data-action="quick-capture"' not in html
+    assert 'data-view-target="capture"' in html
+
+
+def test_dashboard_recent_rdc_replaces_task_summary():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "任务结果" not in html
+    assert 'id="summaryList"' not in html
+    assert 'id="recentRdcList"' in html
+    assert 'callBackend("list_rdc_files"' in html
+    assert 'data-use-rdc="${escapeHtml(path)}"' in html
 
 
 def test_gui_index_escapes_backend_text_in_eid_table_and_toasts():
@@ -117,10 +250,14 @@ def test_main_creates_window_with_bridge_and_starts_debug(monkeypatch):
     class FakeBridge:
         def __init__(self):
             self.bound_window = None
+            self.shutdown_called = False
             bridges.append(self)
 
         def bind_window(self, bound_window):
             self.bound_window = bound_window
+
+        def shutdown(self, payload=None):
+            self.shutdown_called = True
 
     def create_window(title, url, **kwargs):
         created.update({"title": title, "url": url, **kwargs})
@@ -145,3 +282,4 @@ def test_main_creates_window_with_bridge_and_starts_debug(monkeypatch):
     assert created["min_size"] == (1100, 720)
     assert bridges[0].bound_window is window
     assert started == {"debug": True}
+    assert bridges[0].shutdown_called is True

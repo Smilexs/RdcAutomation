@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from rdc_auto.config import AppConfig, load_config, save_config
-from rdc_auto.errors import UserActionRequired
-from rdc_auto.operations import OperationContext, check_environment, release_session, restart_mcp, start_mcp, stop_mcp
+from rdc_auto.errors import DependencyMissing, UserActionRequired
+from rdc_auto.operations import OperationContext, check_environment, release_session, restart_mcp, setup_renderdoc, start_mcp, stop_mcp
 
 
 def test_cli_save_monkeypatch_does_not_pollute_direct_operation_save(monkeypatch, tmp_path):
@@ -17,7 +17,7 @@ def test_cli_save_monkeypatch_does_not_pollute_direct_operation_save(monkeypatch
     cfg.capture.active_pid = 123
     cfg.capture.active_session_started_at = "2026-06-22T00:00:00+08:00"
     mumu_root = tmp_path / "MuMu"
-    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
     mumu_exe.parent.mkdir(parents=True)
     mumu_exe.write_bytes(b"exe")
     cfg.emulator.root_dir = str(mumu_root)
@@ -161,6 +161,40 @@ def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_
     assert result["mcp_executable_path"] == str(exe)
     assert cfg.mcp.executable_path == str(exe)
     assert load_config().mcp.executable_path == str(exe)
+
+
+def test_check_environment_rejects_invalid_configured_renderdoc_path(monkeypatch, tmp_path):
+    cfg = AppConfig.default()
+    cfg.renderdoc.qrenderdoc_path = str(tmp_path / "missing" / "qrenderdoc.exe")
+
+    with pytest.raises(DependencyMissing, match="Configured qrenderdoc.exe was not found"):
+        check_environment(OperationContext(config=cfg))
+
+
+def test_setup_renderdoc_with_configured_path_only_checks_that_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    cfg = AppConfig.default()
+    qrenderdoc = tmp_path / "RenderDocCustom" / "qrenderdoc.exe"
+    renderdoccmd = tmp_path / "RenderDocCustom" / "renderdoccmd.exe"
+    qrenderdoc.parent.mkdir()
+    qrenderdoc.write_bytes(b"exe")
+    renderdoccmd.write_bytes(b"exe")
+    cfg.renderdoc.qrenderdoc_path = str(qrenderdoc)
+
+    class FakeMcpInstaller:
+        def __init__(self, config):
+            raise AssertionError("custom RenderDoc repair should not install MCP")
+
+    monkeypatch.setattr("rdc_auto.operations.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.operations.ensure_mumu_root", lambda config: (_ for _ in ()).throw(AssertionError("custom RenderDoc repair should not prompt for MuMu12")))
+    monkeypatch.setattr("rdc_auto.renderdoc_installer.RenderDocInstaller._read_installed_version", lambda self, found: "1.44")
+
+    setup_renderdoc(OperationContext(config=cfg))
+
+    assert cfg.renderdoc.install_dir == str(qrenderdoc.parent)
+    assert cfg.renderdoc.qrenderdoc_path == str(qrenderdoc)
+    assert cfg.renderdoc.renderdoccmd_path == str(renderdoccmd)
+    assert load_config().renderdoc.qrenderdoc_path == str(qrenderdoc)
 
 
 def test_start_mcp_persists_restart_required_when_patch_requires_closed_renderdoc(monkeypatch, tmp_path):

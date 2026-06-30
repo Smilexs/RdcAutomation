@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from rdc_auto.config import AppConfig
 from rdc_auto.errors import McpCapabilityMissing, RdcAutoError
 from rdc_auto.mcp_client import FileIpcMcpClient
+from rdc_auto.paths import validate_mumu_root
 from rdc_auto.processes import count_processes
 from rdc_auto.renderdoc_installer import RENDERDOC_VERSION
 
@@ -76,6 +77,7 @@ def build_status_snapshot(
     config_preview = asdict(cfg)
     if config_preview.get("ai", {}).get("api_key"):
         config_preview["ai"]["api_key"] = "********"
+    mumu_ready, mumu_invalid_reason = _mumu_status(cfg)
 
     return {
         "renderdoc": {
@@ -84,17 +86,18 @@ def build_status_snapshot(
             "path": cfg.renderdoc.qrenderdoc_path,
         },
         "mumu": {
-            "ready": bool(cfg.emulator.root_dir),
+            "ready": mumu_ready,
             "root_dir": cfg.emulator.root_dir,
             "vm_index": cfg.emulator.vm_index,
             "graphics_api": cfg.emulator.graphics_api,
+            "invalid_reason": mumu_invalid_reason,
         },
         "mcp": {
             "ready": mcp_ready,
             "running": mcp_running,
             "process_running": mcp_runtime.process_running if mcp_runtime is not None else mcp_process_running,
             "runtime_detail": mcp_runtime_detail,
-            "version": cfg.mcp.release_tag or cfg.mcp.asset_name or "unknown",
+            "version": _mcp_display_version(cfg),
             "path": cfg.mcp.executable_path,
             "extension_loaded": mcp_running and not cfg.mcp.extension_patch_restart_required,
         },
@@ -116,3 +119,23 @@ def build_status_snapshot(
         },
         "config_preview": config_preview,
     }
+
+
+def _mumu_status(cfg: AppConfig) -> tuple[bool, str]:
+    if not cfg.emulator.root_dir:
+        return False, "MuMu12 root directory is not configured"
+    try:
+        validate_mumu_root(cfg.emulator.root_dir, cfg.emulator.exe_relative_path)
+    except FileNotFoundError as exc:
+        return False, str(exc)
+    return True, ""
+
+
+def _mcp_display_version(cfg: AppConfig) -> str:
+    if cfg.mcp.release_tag:
+        return cfg.mcp.release_tag
+    if cfg.mcp.asset_name:
+        return cfg.mcp.asset_name
+    if cfg.mcp.executable_path:
+        return "版本未记录"
+    return "未配置"

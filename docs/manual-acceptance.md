@@ -33,8 +33,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 2. 确认 RenderDoc v1.44 已被检测到，或已由安装流程安装。
 3. 确认 RenderDocMCP 安装程序是从 GitHub 最新 release 下载的 `RenderDocMCP-Setup-*.exe`。
 4. 确认 RenderDocMCP 已安装，并且 `config.json` 记录了已安装的可执行文件路径。
-5. 按提示输入 MuMu12 根安装目录。
-6. 确认 `<MuMu12Root>\MuMuPlayer-12.0\nx_main\MuMuNxMain.exe` 存在。
+5. 按提示输入 MuMu12 根目录；该目录必须直接包含 `nx_main`。
+6. 确认 `<MuMu12Root>\nx_main\MuMuNxMain.exe` 存在。
 
 ### 启动捕获环境
 

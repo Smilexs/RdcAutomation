@@ -226,6 +226,29 @@ def test_list_draw_calls_returns_event_rows(tmp_path):
     ]
 
 
+def test_list_draw_calls_preserves_asset_metadata_when_available(tmp_path):
+    class FakeMcp:
+        def call(self, method, params=None, timeout=None):
+            if method == "open_capture":
+                return {}
+            if method == "get_draw_calls":
+                return {
+                    "draws": [
+                        {
+                            "event_id": 1203,
+                            "name": "Character.Draw",
+                            "has_mesh": True,
+                            "texture_count": 4,
+                        }
+                    ]
+                }
+            raise AssertionError(method)
+
+    rows = ExportService(FakeMcp()).list_draw_calls(tmp_path / "capture.rdc")
+
+    assert rows == [{"event_id": 1203, "name": "Character.Draw", "has_mesh": True, "texture_count": 4}]
+
+
 def test_export_mesh_for_event_writes_obj(tmp_path):
     class FakeMcp:
         def call(self, method, params=None, timeout=None):

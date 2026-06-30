@@ -126,7 +126,7 @@ def test_setup_fails_when_renderdoc_missing_after_install(monkeypatch, capsys):
     monkeypatch.setattr("rdc_auto.cli.load_config", lambda: cfg)
     monkeypatch.setattr("rdc_auto.cli.save_config", lambda config: None)
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
-    monkeypatch.setattr("rdc_auto.cli.validate_mumu_root", lambda root: Path("D:\\MuMu\\MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"))
+    monkeypatch.setattr("rdc_auto.cli.validate_mumu_root", lambda root: Path("D:\\MuMu\\nx_main\\MuMuNxMain.exe"))
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
 
     assert main(["setup"]) == 1
@@ -168,7 +168,7 @@ def test_setup_does_not_persist_invalid_prompted_mumu_root(monkeypatch, tmp_path
 
 def test_attach_reprompts_when_configured_mumu_root_is_invalid(monkeypatch, tmp_path):
     good_root = tmp_path / "good"
-    exe = good_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    exe = good_root / "nx_main" / "MuMuNxMain.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"exe")
     cfg = AppConfig.default()
@@ -232,7 +232,7 @@ def test_main_saves_expected_error_config_mutations(monkeypatch):
 def test_attach_prepares_capture_bridge_and_qrenderdoc_before_launch(monkeypatch, tmp_path):
     cfg = AppConfig.default()
     mumu_root = tmp_path / "MuMu"
-    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
     mumu_exe.parent.mkdir(parents=True)
     mumu_exe.write_bytes(b"exe")
     cfg.emulator.root_dir = str(mumu_root)
@@ -259,7 +259,7 @@ def test_attach_prepares_capture_bridge_and_qrenderdoc_before_launch(monkeypatch
 def test_attach_does_not_use_renderdoc_mcp(monkeypatch, tmp_path):
     cfg = AppConfig.default()
     mumu_root = tmp_path / "MuMu"
-    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
     mumu_exe.parent.mkdir(parents=True)
     mumu_exe.write_bytes(b"exe")
     cfg.emulator.root_dir = str(mumu_root)
@@ -756,7 +756,7 @@ def test_capture_bridge_client_bootstraps_qrenderdoc_when_starting(monkeypatch, 
 def test_capture_connects_running_target_with_capture_bridge(monkeypatch, tmp_path):
     cfg = AppConfig.default()
     mumu_root = tmp_path / "MuMu"
-    mumu_exe = mumu_root / "MuMuPlayer-12.0" / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
     mumu_exe.parent.mkdir(parents=True)
     mumu_exe.write_bytes(b"exe")
     cfg.emulator.root_dir = str(mumu_root)

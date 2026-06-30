@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from types import SimpleNamespace
 
@@ -15,16 +16,41 @@ def test_build_status_snapshot_contains_topbar_sections(tmp_path):
     cfg = AppConfig.default()
     cfg.renderdoc.qrenderdoc_path = str(tmp_path / "qrenderdoc.exe")
     cfg.mcp.executable_path = str(tmp_path / "RenderDocMCP.exe")
-    cfg.emulator.root_dir = str(tmp_path / "MuMu")
+    mumu_root = tmp_path / "MuMu"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    cfg.emulator.root_dir = str(mumu_root)
     cfg.capture.active_launch_id = "launch-1"
 
     snapshot = build_status_snapshot(cfg, process_counts={"qrenderdoc.exe": 1})
 
     assert snapshot["renderdoc"]["path"].endswith("qrenderdoc.exe")
+    assert snapshot["mumu"]["ready"] is True
+    assert snapshot["mumu"]["invalid_reason"] == ""
     assert snapshot["mcp"]["running"] is True
     assert snapshot["session"]["attached"] is True
     assert snapshot["session"]["launch_id"] == "launch-1"
     assert snapshot["config_preview"]["capture"]["active_launch_id"] == "launch-1"
+
+
+def test_build_status_snapshot_marks_unset_mumu_root_invalid():
+    cfg = AppConfig.default()
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["mumu"]["ready"] is False
+    assert snapshot["mumu"]["invalid_reason"] == "MuMu12 root directory is not configured"
+
+
+def test_build_status_snapshot_validates_mumu_root(tmp_path):
+    cfg = AppConfig.default()
+    cfg.emulator.root_dir = str(tmp_path / "missing-mumu")
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["mumu"]["ready"] is False
+    assert "MuMu12 executable not found" in snapshot["mumu"]["invalid_reason"]
 
 
 def test_build_status_snapshot_empty_process_counts_are_authoritative(monkeypatch):
@@ -54,6 +80,16 @@ def test_build_status_snapshot_uses_mcp_probe_over_qrenderdoc_process_guess(tmp_
     assert snapshot["mcp"]["running"] is False
     assert snapshot["mcp"]["extension_loaded"] is False
     assert snapshot["mcp"]["runtime_detail"] == "ping timeout"
+
+
+def test_build_status_snapshot_uses_readable_mcp_version_fallback_when_configured(tmp_path):
+    cfg = AppConfig.default()
+    cfg.mcp.executable_path = str(tmp_path / "RenderDocMCP.exe")
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["mcp"]["version"] != "unknown"
+    assert snapshot["mcp"]["version"] == "版本未记录"
 
 
 def test_build_status_snapshot_masks_saved_ai_api_key():
@@ -102,6 +138,36 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
 
     assert response["ok"] is True
     assert response["data"]["mumu"]["vm_index"] == "1"
+
+
+def test_bridge_save_environment_canonicalizes_nested_mumu_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    mumu_root = tmp_path / "MuMuPlayer"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_environment({"mumu_root": str(mumu_exe.parent)})
+
+    assert response["ok"] is True
+    assert response["data"]["mumu"]["root_dir"] == str(mumu_root)
+    assert response["data"]["mumu"]["ready"] is True
+
+
+def test_bridge_save_environment_returns_ready_mumu_status_for_valid_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    mumu_root = tmp_path / "MuMu12"
+    mumu_exe = mumu_root / "nx_main" / "MuMuNxMain.exe"
+    mumu_exe.parent.mkdir(parents=True)
+    mumu_exe.write_bytes(b"exe")
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_environment({"mumu_root": str(mumu_root)})
+
+    assert response["ok"] is True
+    assert response["data"]["mumu"]["ready"] is True
+    assert response["data"]["mumu"]["invalid_reason"] == ""
 
 
 def test_bridge_save_ai_does_not_persist_api_key(tmp_path, monkeypatch):
@@ -183,6 +249,97 @@ def test_bridge_restart_mcp_forces_release_of_stale_capture_session(monkeypatch)
 
     assert job["data"]["state"] == "succeeded"
     assert calls == [True]
+
+
+def test_bridge_shutdown_terminates_only_mcp_pid_started_by_start_action(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    stage = {"value": "before"}
+    pids_by_stage = {
+        "before": {"qrenderdoc.exe": set(), "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+        "after": {"qrenderdoc.exe": {101}, "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+        "shutdown": {"qrenderdoc.exe": {101, 202}, "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+    }
+    terminated = []
+
+    def fake_process_ids(image_name):
+        return pids_by_stage[stage["value"]].get(image_name, set())
+
+    def fake_start(ctx):
+        stage["value"] = "after"
+        return object()
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.process_ids", fake_process_ids)
+    monkeypatch.setattr("rdc_auto.gui.bridge.terminate_process_tree_by_pid", lambda pid: terminated.append(pid))
+    monkeypatch.setattr("rdc_auto.gui.bridge.start_mcp", fake_start)
+    monkeypatch.setattr("rdc_auto.gui.bridge.release_session", lambda ctx: None)
+
+    response = bridge.start_job({"action": "start_mcp"})
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+    stage["value"] = "shutdown"
+    shutdown = bridge.shutdown({})
+
+    assert job["data"]["state"] == "succeeded"
+    assert shutdown["ok"] is True
+    assert terminated == [101]
+
+
+def test_bridge_shutdown_does_not_terminate_mcp_pid_reused_by_start_action(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    pids = {"qrenderdoc.exe": {101}, "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()}
+    terminated = []
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.process_ids", lambda image_name: pids.get(image_name, set()))
+    monkeypatch.setattr("rdc_auto.gui.bridge.terminate_process_tree_by_pid", lambda pid: terminated.append(pid))
+    monkeypatch.setattr("rdc_auto.gui.bridge.start_mcp", lambda ctx: object())
+
+    response = bridge.start_job({"action": "start_mcp"})
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+    shutdown = bridge.shutdown({})
+
+    assert job["data"]["state"] == "succeeded"
+    assert shutdown["ok"] is True
+    assert terminated == []
+
+
+def test_bridge_shutdown_terminates_mcp_pid_started_by_export_action(monkeypatch, tmp_path):
+    bridge = GuiBridge(run_jobs_inline=True)
+    stage = {"value": "before"}
+    pids_by_stage = {
+        "before": {"qrenderdoc.exe": set(), "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+        "after": {"qrenderdoc.exe": {303}, "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+        "shutdown": {"qrenderdoc.exe": {303}, "RenderDocMCP.exe": set(), "renderdoc-mcp.exe": set()},
+    }
+    terminated = []
+
+    def fake_process_ids(image_name):
+        return pids_by_stage[stage["value"]].get(image_name, set())
+
+    def fake_export_assets(ctx, rdc_path, output_dir, assets):
+        stage["value"] = "after"
+        return {"source_rdc": rdc_path, "assets": assets}
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.process_ids", fake_process_ids)
+    monkeypatch.setattr("rdc_auto.gui.bridge.terminate_process_tree_by_pid", lambda pid: terminated.append(pid))
+    monkeypatch.setattr("rdc_auto.gui.bridge.export_assets", fake_export_assets)
+    monkeypatch.setattr("rdc_auto.gui.bridge.release_session", lambda ctx: None)
+
+    response = bridge.start_job(
+        {
+            "action": "export",
+            "params": {
+                "rdc_path": str(tmp_path / "capture.rdc"),
+                "output_dir": str(tmp_path / "out"),
+                "assets": "both",
+            },
+        }
+    )
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+    stage["value"] = "shutdown"
+    shutdown = bridge.shutdown({})
+
+    assert job["data"]["state"] == "succeeded"
+    assert shutdown["ok"] is True
+    assert terminated == [303]
 
 
 def test_bridge_get_status_returns_error_envelope_on_runtime_error(monkeypatch):
@@ -325,6 +482,24 @@ def test_bridge_export_eid_textures_returns_clear_unsupported_capability_error(m
     assert response["ok"] is False
     assert response["error"]["type"] == "McpCapabilityMissing"
     assert response["error"]["message"] == "Installed RenderDocMCP does not support EID bound texture export."
+
+
+def test_bridge_list_rdc_files_returns_directory_files_newest_first(tmp_path):
+    old = tmp_path / "old.rdc"
+    recent = tmp_path / "recent.rdc"
+    ignored = tmp_path / "notes.txt"
+    old.write_text("old", encoding="utf-8")
+    recent.write_text("recent", encoding="utf-8")
+    ignored.write_text("ignored", encoding="utf-8")
+    os.utime(old, (100, 100))
+    os.utime(recent, (200, 200))
+
+    bridge = GuiBridge(run_jobs_inline=True)
+    response = bridge.list_rdc_files({"directory": str(tmp_path)})
+
+    assert response["ok"] is True
+    assert response["data"] == {"files": [str(recent), str(old)]}
+    assert response["logs"] == ["found 2 RDC files"]
 
 
 class FakeWindow:

@@ -22,7 +22,7 @@ def test_load_config_returns_defaults_when_missing(tmp_path, monkeypatch):
     assert cfg.mcp.asset_name == ""
     assert cfg.mcp.executable_path == ""
     assert cfg.emulator.type == "mumu12"
-    assert cfg.emulator.exe_relative_path == "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe"
+    assert cfg.emulator.exe_relative_path == "nx_main\\MuMuNxMain.exe"
     assert cfg.emulator.graphics_api == "vulkan"
 
 
@@ -80,3 +80,25 @@ def test_legacy_config_without_gui_ai_loads_defaults(tmp_path, monkeypatch):
     assert cfg.ai.model == "gpt-4.1-mini"
     assert cfg.ai.base_url == "https://api.openai.com/v1"
     assert cfg.ai.api_key == ""
+
+
+def test_load_config_migrates_legacy_mumu_relative_exe(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    path = config_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "emulator": {
+                    "root_dir": "D:\\MuMuPlayer",
+                    "exe_relative_path": "MuMuPlayer-12.0\\nx_main\\MuMuNxMain.exe",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_config()
+
+    assert cfg.emulator.root_dir == "D:\\MuMuPlayer"
+    assert cfg.emulator.exe_relative_path == "nx_main\\MuMuNxMain.exe"

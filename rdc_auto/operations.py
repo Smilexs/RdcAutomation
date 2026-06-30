@@ -44,14 +44,7 @@ class OperationContext:
 
 def setup_environment(ctx: OperationContext) -> None:
     cfg = ctx.cfg()
-    ctx.emit("checking RenderDoc", 10)
-    installer = RenderDocInstaller(cfg)
-    if not installer.ensure_installed():
-        url = installer.resolve_download_url()
-        installer_path = installer.download_installer(url)
-        installer.run_installer(installer_path)
-        if not installer.ensure_installed():
-            raise DependencyMissing("RenderDoc v1.44 installation completed, but qrenderdoc.exe with version 1.44 was not found.")
+    setup_renderdoc(ctx, save=False)
 
     ctx.emit("checking MuMu12", 55)
     ensure_mumu_root(cfg)
@@ -62,6 +55,23 @@ def setup_environment(ctx: OperationContext) -> None:
     cfg.mcp.executable_path = str(mcp_exe)
     ctx.emit("setup complete", 100)
     ctx.save()
+
+
+def setup_renderdoc(ctx: OperationContext, save: bool = True) -> None:
+    cfg = ctx.cfg()
+    ctx.emit("checking RenderDoc", 10)
+    installer = RenderDocInstaller(cfg)
+    if not installer.ensure_installed():
+        ctx.emit("downloading RenderDoc", 25)
+        url = installer.resolve_download_url()
+        installer_path = installer.download_installer(url)
+        ctx.emit("running RenderDoc installer", 45)
+        installer.run_installer(installer_path)
+        if not installer.ensure_installed():
+            raise DependencyMissing("RenderDoc v1.44 installation completed, but qrenderdoc.exe with version 1.44 was not found.")
+    ctx.emit("RenderDoc setup complete", 100)
+    if save:
+        ctx.save()
 
 
 def setup_mcp(ctx: OperationContext) -> Path:
