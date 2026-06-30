@@ -6,7 +6,16 @@ import pytest
 
 from rdc_auto.config import AppConfig, load_config, save_config
 from rdc_auto.errors import DependencyMissing, UserActionRequired
-from rdc_auto.operations import OperationContext, check_environment, release_session, restart_mcp, setup_renderdoc, start_mcp, stop_mcp
+from rdc_auto.operations import (
+    OperationContext,
+    check_environment,
+    release_session,
+    restart_mcp,
+    setup_renderdoc,
+    setup_renderdoc_and_mcp,
+    start_mcp,
+    stop_mcp,
+)
 
 
 def test_cli_save_monkeypatch_does_not_pollute_direct_operation_save(monkeypatch, tmp_path):
@@ -169,6 +178,50 @@ def test_check_environment_rejects_invalid_configured_renderdoc_path(monkeypatch
 
     with pytest.raises(DependencyMissing, match="Configured qrenderdoc.exe was not found"):
         check_environment(OperationContext(config=cfg))
+
+
+def test_check_environment_rejects_invalid_configured_mcp_path(monkeypatch, tmp_path):
+    cfg = AppConfig.default()
+    cfg.mcp.executable_path = str(tmp_path / "missing" / "RenderDocMCP.exe")
+
+    class FakeRenderDocInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            return False
+
+    monkeypatch.setattr("rdc_auto.operations.RenderDocInstaller", FakeRenderDocInstaller)
+
+    with pytest.raises(DependencyMissing, match="Configured RenderDocMCP executable was not found"):
+        check_environment(OperationContext(config=cfg))
+
+
+def test_setup_renderdoc_and_mcp_does_not_prompt_for_mumu(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    cfg = AppConfig.default()
+    calls = []
+    mcp_exe = tmp_path / "RenderDocMCP.exe"
+    mcp_exe.write_bytes(b"exe")
+
+    monkeypatch.setattr("rdc_auto.operations.setup_renderdoc", lambda ctx, save=True: calls.append(("renderdoc", save)))
+
+    class FakeMcpInstaller:
+        def __init__(self, config):
+            self.config = config
+
+        def ensure_installed(self):
+            calls.append(("mcp", None))
+            return mcp_exe
+
+    monkeypatch.setattr("rdc_auto.operations.McpInstaller", FakeMcpInstaller)
+    monkeypatch.setattr("rdc_auto.operations.ensure_mumu_root", lambda config: (_ for _ in ()).throw(AssertionError("auto tool install must not prompt for MuMu12")))
+
+    setup_renderdoc_and_mcp(OperationContext(config=cfg))
+
+    assert calls == [("renderdoc", False), ("mcp", None)]
+    assert cfg.mcp.executable_path == str(mcp_exe)
+    assert load_config().mcp.executable_path == str(mcp_exe)
 
 
 def test_setup_renderdoc_with_configured_path_only_checks_that_path(monkeypatch, tmp_path):

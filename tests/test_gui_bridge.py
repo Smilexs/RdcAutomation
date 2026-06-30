@@ -43,6 +43,30 @@ def test_build_status_snapshot_marks_unset_mumu_root_invalid():
     assert snapshot["mumu"]["invalid_reason"] == "MuMu12 root directory is not configured"
 
 
+def test_build_status_snapshot_marks_unset_tool_paths_invalid():
+    cfg = AppConfig.default()
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["renderdoc"]["ready"] is False
+    assert snapshot["renderdoc"]["invalid_reason"] == "qrenderdoc.exe path is not configured"
+    assert snapshot["mcp"]["ready"] is False
+    assert snapshot["mcp"]["invalid_reason"] == "RenderDocMCP path is not configured"
+
+
+def test_build_status_snapshot_marks_missing_tool_paths_invalid(tmp_path):
+    cfg = AppConfig.default()
+    cfg.renderdoc.qrenderdoc_path = str(tmp_path / "missing" / "qrenderdoc.exe")
+    cfg.mcp.executable_path = str(tmp_path / "missing" / "RenderDocMCP.exe")
+
+    snapshot = build_status_snapshot(cfg, process_counts={})
+
+    assert snapshot["renderdoc"]["ready"] is False
+    assert "qrenderdoc.exe was not found" in snapshot["renderdoc"]["invalid_reason"]
+    assert snapshot["mcp"]["ready"] is False
+    assert "RenderDocMCP executable was not found" in snapshot["mcp"]["invalid_reason"]
+
+
 def test_build_status_snapshot_validates_mumu_root(tmp_path):
     cfg = AppConfig.default()
     cfg.emulator.root_dir = str(tmp_path / "missing-mumu")
@@ -130,6 +154,7 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
     response = bridge.save_environment(
         {
             "renderdoc_path": "C:\\Program Files\\RenderDoc\\qrenderdoc.exe",
+            "mcp_path": "C:\\Users\\me\\AppData\\Local\\Programs\\RenderDocMCP\\RenderDocMCP.exe",
             "mumu_root": "D:\\MuMu",
             "vm_index": "1",
             "graphics_api": "vulkan",
@@ -138,6 +163,23 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
 
     assert response["ok"] is True
     assert response["data"]["mumu"]["vm_index"] == "1"
+    assert load_config().mcp.executable_path == "C:\\Users\\me\\AppData\\Local\\Programs\\RenderDocMCP\\RenderDocMCP.exe"
+
+
+def test_bridge_start_job_supports_renderdoc_and_mcp_setup(monkeypatch):
+    bridge = GuiBridge(run_jobs_inline=True)
+    calls = []
+
+    def fake_setup(ctx):
+        calls.append("setup_renderdoc_and_mcp")
+
+    monkeypatch.setattr("rdc_auto.gui.bridge.setup_renderdoc_and_mcp", fake_setup)
+
+    response = bridge.start_job({"action": "setup_renderdoc_mcp"})
+    job = bridge.get_job({"job_id": response["data"]["job_id"]})
+
+    assert job["data"]["state"] == "succeeded"
+    assert calls == ["setup_renderdoc_and_mcp"]
 
 
 def test_bridge_save_environment_canonicalizes_nested_mumu_directory(tmp_path, monkeypatch):

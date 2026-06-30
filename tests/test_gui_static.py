@@ -29,6 +29,7 @@ def test_gui_index_has_backend_action_mapping():
     assert '"check-env": "check_environment"' in html
     assert '"install-env": "setup_renderdoc"' in html
     assert '"install-mcp": "setup_mcp"' in html
+    assert '"auto-install-tools": "setup_renderdoc_mcp"' in html
     assert '"attach": "attach"' in html
     assert '"capture": "capture"' in html
     assert '"export": "export"' in html
@@ -37,13 +38,53 @@ def test_gui_index_has_backend_action_mapping():
 
 def test_renderdoc_environment_actions_save_path_and_show_logged_prominent_errors():
     html = gui_index_path().read_text(encoding="utf-8")
-    renderdoc_view = html[html.index('id="view-environment"') : html.index('data-section="mcp-config"')]
+    renderdoc_view = html[html.index('id="view-environment"') : html.index('data-section="ai-config"')]
 
     assert 'data-action="open-settings"' not in renderdoc_view
     assert 'callBackend("save_environment", collectEnvironmentParams())' in html
     assert "function jobFailureTitle" in html
     assert 'toast(title, message, "danger")' in html
     assert "提示：" in html
+
+
+def test_renderdoc_card_contains_mcp_path_and_only_requested_buttons():
+    html = gui_index_path().read_text(encoding="utf-8")
+    environment_view = html[html.index('id="view-environment"') : html.index('data-section="ai-config"')]
+    renderdoc_card = environment_view[: environment_view.index("MuMu12")]
+
+    assert 'data-section="mcp-config"' not in environment_view
+    assert 'id="renderdocPath"' in renderdoc_card
+    assert 'id="mcpPath"' in renderdoc_card
+    assert renderdoc_card.index('id="renderdocPath"') < renderdoc_card.index('id="mcpPath"')
+    assert '<input id="renderdocPath" value="" />' in renderdoc_card
+    assert '<input id="mcpPath" value="" />' in renderdoc_card
+    assert 'id="renderdocPathWarning"' in renderdoc_card
+    assert 'id="mcpPathWarning"' in renderdoc_card
+    assert 'data-action="check-env"' in renderdoc_card
+    assert 'data-action="install-env"' in renderdoc_card
+    assert 'data-action="install-mcp"' in renderdoc_card
+    assert 'data-action="save-mcp"' not in environment_view
+    assert 'data-action="open-mcp-dir"' not in environment_view
+
+
+def test_check_environment_prompts_auto_install_when_tools_missing():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "function shouldPromptAutoInstall" in html
+    assert "function confirmAutoInstallTools" in html
+    assert 'state.pendingConfirmAction = "auto-install-tools"' in html
+    assert 'handleAction("auto-install-tools")' in html
+
+
+def test_path_warnings_update_from_backend_status_and_input():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert "renderdocInvalidReason" in html
+    assert "mcpInvalidReason" in html
+    assert "function updateToolPathWarnings" in html
+    assert "renderdoc.invalid_reason" in html
+    assert "mcp.invalid_reason" in html
+    assert 'if (id === "renderdocPath" || id === "mcpPath") node.addEventListener("input", handleToolPathInput);' in html
 
 
 def test_gui_index_deduplicates_backend_job_logs():
@@ -116,7 +157,7 @@ def test_environment_cards_are_vertical_and_include_ai_config_after_mcp():
 
     assert '<div class="grid environment-stack">' in environment_view
     assert '<div class="grid two">' not in environment_view
-    assert environment_view.index('data-section="mcp-config"') < environment_view.index('data-section="ai-config"')
+    assert environment_view.index('id="mcpPath"') < environment_view.index('data-section="ai-config"')
     assert "功能开发中" in environment_view
 
 

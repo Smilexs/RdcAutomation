@@ -57,6 +57,17 @@ def setup_environment(ctx: OperationContext) -> None:
     ctx.save()
 
 
+def setup_renderdoc_and_mcp(ctx: OperationContext) -> None:
+    cfg = ctx.cfg()
+    setup_renderdoc(ctx, save=False)
+
+    ctx.emit("checking RenderDocMCP", 60)
+    mcp_exe = McpInstaller(cfg).ensure_installed()
+    cfg.mcp.executable_path = str(mcp_exe)
+    ctx.emit("RenderDoc and RenderDocMCP setup complete", 100)
+    ctx.save()
+
+
 def setup_renderdoc(ctx: OperationContext, save: bool = True) -> None:
     cfg = ctx.cfg()
     ctx.emit("checking RenderDoc", 10)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from rdc_auto.config import AppConfig
 from rdc_auto.errors import McpCapabilityMissing, RdcAutoError
@@ -60,8 +61,8 @@ def build_status_snapshot(
             return process_counts.get(name, 0)
         return count_processes(name)
 
-    renderdoc_ready = bool(cfg.renderdoc.qrenderdoc_path)
-    mcp_ready = bool(cfg.mcp.executable_path)
+    renderdoc_ready, renderdoc_invalid_reason = _renderdoc_status(cfg)
+    mcp_ready, mcp_invalid_reason = _mcp_config_status(cfg)
     mcp_process_running = (
         process_count("qrenderdoc.exe") == 1
         or process_count("RenderDocMCP.exe") > 0
@@ -84,6 +85,7 @@ def build_status_snapshot(
             "ready": renderdoc_ready,
             "version": cfg.renderdoc.version or RENDERDOC_VERSION,
             "path": cfg.renderdoc.qrenderdoc_path,
+            "invalid_reason": renderdoc_invalid_reason,
         },
         "mumu": {
             "ready": mumu_ready,
@@ -99,6 +101,7 @@ def build_status_snapshot(
             "runtime_detail": mcp_runtime_detail,
             "version": _mcp_display_version(cfg),
             "path": cfg.mcp.executable_path,
+            "invalid_reason": mcp_invalid_reason,
             "extension_loaded": mcp_running and not cfg.mcp.extension_patch_restart_required,
         },
         "session": {
@@ -119,6 +122,30 @@ def build_status_snapshot(
         },
         "config_preview": config_preview,
     }
+
+
+def _renderdoc_status(cfg: AppConfig) -> tuple[bool, str]:
+    raw_path = cfg.renderdoc.qrenderdoc_path.strip()
+    if not raw_path:
+        return False, "qrenderdoc.exe path is not configured"
+    path = Path(raw_path)
+    if path.name.lower() != "qrenderdoc.exe":
+        return False, f"qrenderdoc.exe path must point to qrenderdoc.exe: {path}"
+    if not path.is_file():
+        return False, f"qrenderdoc.exe was not found: {path}"
+    return True, ""
+
+
+def _mcp_config_status(cfg: AppConfig) -> tuple[bool, str]:
+    raw_path = cfg.mcp.executable_path.strip()
+    if not raw_path:
+        return False, "RenderDocMCP path is not configured"
+    path = Path(raw_path)
+    if path.name.lower() not in {"renderdocmcp.exe", "renderdoc-mcp.exe"}:
+        return False, f"RenderDocMCP path must point to RenderDocMCP.exe: {path}"
+    if not path.is_file():
+        return False, f"RenderDocMCP executable was not found: {path}"
+    return True, ""
 
 
 def _mumu_status(cfg: AppConfig) -> tuple[bool, str]:

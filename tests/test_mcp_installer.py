@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import io
 import subprocess
+import urllib.error
 
 import pytest
 
 from rdc_auto.config import AppConfig
+from rdc_auto.errors import DependencyMissing
 from rdc_auto.mcp_installer import McpInstaller, parse_release_asset
 
 
@@ -122,6 +125,15 @@ def test_discover_executable_prefers_configured_path(tmp_path):
     assert installer.discover_executable() == exe
 
 
+def test_discover_executable_rejects_invalid_configured_path(tmp_path):
+    cfg = AppConfig.default()
+    cfg.mcp.executable_path = str(tmp_path / "missing" / "RenderDocMCP.exe")
+    installer = McpInstaller(cfg)
+
+    with pytest.raises(DependencyMissing, match="Configured RenderDocMCP executable was not found"):
+        installer.discover_executable()
+
+
 def test_discover_executable_checks_localappdata_renderdocmcp(tmp_path, monkeypatch):
     local_app_data = tmp_path / "LocalAppData"
     exe = local_app_data / "RenderDocMCP" / "RenderDocMCP.exe"
@@ -134,6 +146,40 @@ def test_discover_executable_checks_localappdata_renderdocmcp(tmp_path, monkeypa
 
     assert installer.discover_executable() == exe
     assert cfg.mcp.executable_path == str(exe)
+
+
+def test_discover_executable_checks_localappdata_programs_renderdocmcp(tmp_path, monkeypatch):
+    local_app_data = tmp_path / "LocalAppData"
+    exe = local_app_data / "Programs" / "RenderDocMCP" / "RenderDocMCP.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"exe")
+    cfg = AppConfig.default()
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    installer = McpInstaller(cfg)
+
+    assert installer.discover_executable() == exe
+    assert cfg.mcp.executable_path == str(exe)
+
+
+def test_fetch_json_explains_github_rate_limit(monkeypatch):
+    def fail_urlopen(request, timeout):
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest",
+            code=403,
+            msg="rate limit exceeded",
+            hdrs={},
+            fp=io.BytesIO(b'{"message":"API rate limit exceeded"}'),
+        )
+
+    monkeypatch.setattr("rdc_auto.mcp_installer.urllib.request.urlopen", fail_urlopen)
+
+    with pytest.raises(DependencyMissing) as exc_info:
+        McpInstaller._fetch_json("https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest")
+
+    message = str(exc_info.value)
+    assert "GitHub API rate limit" in message
+    assert "RenderDocMCP" in message
 
 
 def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tmp_path):

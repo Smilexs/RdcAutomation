@@ -21,6 +21,7 @@ from rdc_auto.operations import (
     restart_mcp,
     setup_environment,
     setup_renderdoc,
+    setup_renderdoc_and_mcp,
     setup_mcp,
     mcp_client,
     start_mcp,
@@ -55,6 +56,7 @@ class GuiBridge:
             payload = payload or {}
             cfg = load_config()
             cfg.renderdoc.qrenderdoc_path = str(payload.get("renderdoc_path", "")).strip()
+            cfg.mcp.executable_path = str(payload.get("executable_path", payload.get("mcp_path", ""))).strip()
             mumu_root = str(payload.get("mumu_root", "")).strip()
             if mumu_root:
                 try:
@@ -118,6 +120,7 @@ class GuiBridge:
                 "check_environment": lambda emit: check_environment(OperationContext(progress=emit)),
                 "setup": lambda emit: _completed(setup_environment(OperationContext(progress=emit))),
                 "setup_renderdoc": lambda emit: _completed(setup_renderdoc(OperationContext(progress=emit))),
+                "setup_renderdoc_mcp": lambda emit: _completed(setup_renderdoc_and_mcp(OperationContext(progress=emit))),
                 "setup_mcp": lambda emit: _completed(setup_mcp(OperationContext(progress=emit))),
                 "start_mcp": lambda emit: _running(
                     self._track_mcp_runtime_start(lambda: start_mcp(OperationContext(progress=emit)))

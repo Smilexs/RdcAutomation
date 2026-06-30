@@ -849,12 +849,19 @@
                 <div class="form-grid">
                   <div class="form-row full">
                     <label for="renderdocPath">qrenderdoc.exe 路径</label>
-                    <input id="renderdocPath" value="C:\Program Files\RenderDoc\qrenderdoc.exe" />
+                    <input id="renderdocPath" value="" />
+                    <p class="warning-text active" id="renderdocPathWarning">qrenderdoc.exe 路径未设置。检测环境时会先查找 C:\Program Files\RenderDoc\qrenderdoc.exe。</p>
+                  </div>
+                  <div class="form-row full">
+                    <label for="mcpPath">RenderDocMCP 路径</label>
+                    <input id="mcpPath" value="" />
+                    <p class="warning-text active" id="mcpPathWarning">RenderDocMCP 路径未设置。检测环境时会先查找 %LOCALAPPDATA%\Programs\RenderDocMCP\RenderDocMCP.exe。</p>
                   </div>
                 </div>
                 <div class="toolbar">
                   <button class="btn" data-action="check-env">检测环境</button>
-                  <button class="btn teal" data-action="install-env">安装/修复</button>
+                  <button class="btn teal" data-action="install-env">安装RenderDoc</button>
+                  <button class="btn teal" data-action="install-mcp">安装MCP</button>
                 </div>
                 <div class="progress" id="envProgress"><span></span></div>
               </div>
@@ -892,28 +899,6 @@
                   <button class="btn success" data-action="save-env">保存配置</button>
                 </div>
               </div>
-          </section>
-
-          <section class="panel" data-section="mcp-config">
-            <div class="panel-header">
-              <div>
-                <h3 class="panel-title">RenderDoc MCP</h3>
-              </div>
-            </div>
-            <div class="panel-body grid">
-              <div class="form-grid">
-                <div class="form-row full">
-                  <label for="mcpPath">RenderDocMCP 路径</label>
-                  <input id="mcpPath" value="%LOCALAPPDATA%\Programs\RenderDocMCP\RenderDocMCP.exe" />
-                </div>
-              </div>
-              <div class="toolbar">
-                <button class="btn success" data-action="save-mcp">保存 MCP 配置</button>
-                <button class="btn teal" data-action="install-mcp">安装/修复 MCP</button>
-                <button class="btn neutral" data-action="open-mcp-dir">打开 MCP 目录</button>
-              </div>
-              <div class="progress" id="mcpProgress"><span></span></div>
-            </div>
           </section>
 
           <section class="panel" data-section="ai-config">
@@ -1055,6 +1040,7 @@
                   <button class="btn neutral" data-action="open-mcp-dir">打开目录</button>
                 </div>
               </div>
+              <div class="progress" id="mcpProgress"><span></span></div>
             </div>
           </section>
 
@@ -1196,11 +1182,11 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-body">
         <h3 class="modal-title" id="modalTitle">确认强制关闭 MuMu12？</h3>
-        <p class="modal-copy">真实版本里，这一步会调用 attach --force 并终止正在运行的 MuMu 进程。当前静态原型只模拟确认流程，不会执行任何系统操作。</p>
+        <p class="modal-copy" id="modalCopy">真实版本里，这一步会调用 attach --force 并终止正在运行的 MuMu 进程。当前静态原型只模拟确认流程，不会执行任何系统操作。</p>
       </div>
       <div class="modal-actions">
-        <button class="btn neutral" data-action="cancel-force">取消</button>
-        <button class="btn danger" data-action="confirm-force">确认模拟</button>
+        <button class="btn neutral" id="modalCancelButton" data-action="cancel-modal">取消</button>
+        <button class="btn danger" id="modalConfirmButton" data-action="confirm-modal">确认模拟</button>
       </div>
     </div>
   </div>
@@ -1221,8 +1207,10 @@
 
   <script>
     const state = {
-      renderdocReady: true,
+      renderdocReady: false,
+      renderdocInvalidReason: "qrenderdoc.exe path is not configured",
       mcpReady: false,
+      mcpInvalidReason: "RenderDocMCP path is not configured",
       mcpRunning: false,
       mcpVersion: "unknown",
       mcpExtensionLoaded: false,
@@ -1233,6 +1221,7 @@
       recentRdcFiles: [],
       recentRdcLoadedFromBackend: false,
       backendConfigPreview: null,
+      pendingConfirmAction: "",
     };
 
     const pages = {
@@ -1316,6 +1305,7 @@
       "stop-mcp": "stop_mcp",
       "restart-mcp": "restart_mcp",
       "install-mcp": "setup_mcp",
+      "auto-install-tools": "setup_renderdoc_mcp",
       "attach": "attach",
       "capture": "capture",
       "release-session": "release_session",
@@ -1384,8 +1374,8 @@
     }
 
     function progressSelectorForAction(action) {
+      if (action === "install-mcp" || action === "auto-install-tools" || action.indexOf("env") >= 0) return "#envProgress";
       if (action.indexOf("mcp") >= 0) return "#mcpProgress";
-      if (action.indexOf("env") >= 0) return "#envProgress";
       if (action.indexOf("attach") >= 0 || action === "release-session") return "#attachProgress";
       if (action.indexOf("capture") >= 0) return "#captureProgress";
       if (action === "export") return "#exportProgress";
@@ -1397,14 +1387,22 @@
         return { title: "环境检测完成", body: "RenderDoc、MCP、MuMu12 状态已刷新，配置已同步。" };
       }
       if (frontendAction === "install-env") {
-        return { title: "RenderDoc 安装/修复完成", body: "RenderDoc 路径已检查并同步到配置。" };
+        return { title: "RenderDoc 安装完成", body: "RenderDoc 路径已检查并同步到配置。" };
+      }
+      if (frontendAction === "install-mcp") {
+        return { title: "MCP 安装完成", body: "RenderDocMCP 路径已检查并同步到配置。" };
+      }
+      if (frontendAction === "auto-install-tools") {
+        return { title: "自动安装完成", body: "RenderDoc 和 RenderDocMCP 路径已同步到配置。" };
       }
       return { title: "Action complete", body: `${backendAction} completed.` };
     }
 
     function jobFailureTitle(action) {
       if (action === "check_environment") return "环境检测失败";
-      if (action === "setup_renderdoc") return "RenderDoc 安装/修复失败";
+      if (action === "setup_renderdoc") return "RenderDoc 安装失败";
+      if (action === "setup_mcp") return "MCP 安装失败";
+      if (action === "setup_renderdoc_mcp") return "自动安装失败";
       return "Backend job failed";
     }
 
@@ -1461,6 +1459,22 @@
       });
     }
 
+    function shouldPromptAutoInstall(result) {
+      if (!result) return false;
+      return !Boolean(result.renderdoc_installed) && !Boolean(result.mcp_installed);
+    }
+
+    function promptAutoInstallTools() {
+      state.pendingConfirmAction = "auto-install-tools";
+      showConfirmModal({
+        action: "auto-install-tools",
+        title: "未找到 RenderDoc 和 RenderDocMCP",
+        body: "当前配置和默认路径都没有找到 qrenderdoc.exe 与 RenderDocMCP.exe。是否自动安装 RenderDoc 和 MCP？",
+        confirmText: "确认自动安装",
+        confirmVariant: "teal",
+      });
+    }
+
     async function refreshStatusFromBackend() {
       const response = await callBackend("get_status", {});
       if (response.ok) {
@@ -1479,9 +1493,11 @@
       const session = snapshot.session || {};
       const paths = snapshot.paths || {};
       state.renderdocReady = Boolean(renderdoc.ready);
+      state.renderdocInvalidReason = renderdoc.invalid_reason || "";
       state.mumuReady = Boolean(mumu.ready);
       state.mumuInvalidReason = mumu.invalid_reason || "";
       state.mcpReady = Boolean(mcp.ready);
+      state.mcpInvalidReason = mcp.invalid_reason || "";
       state.mcpRunning = Boolean(mcp.running);
       state.mcpExtensionLoaded = Boolean(mcp.extension_loaded);
       state.mcpVersion = mcp.version || state.mcpVersion;
@@ -1503,6 +1519,7 @@
     function collectEnvironmentParams() {
       return {
         renderdoc_path: $("#renderdocPath") ? $("#renderdocPath").value : "",
+        mcp_path: $("#mcpPath") ? $("#mcpPath").value : "",
         mumu_root: $("#mumuRoot") ? $("#mumuRoot").value : "",
         vm_index: $("#vmIndex") ? $("#vmIndex").value : "",
         graphics_api: "vulkan"
@@ -1552,10 +1569,45 @@
       $("#mcpStatus").textContent = state.mcpReady
         ? `MCP ${state.mcpVersion} ${state.mcpRunning ? "运行中" : "已关闭"}`
         : `MCP ${state.mcpVersion} 未就绪`;
+      updateToolPathWarnings();
       updateMumuPathWarning();
       updateMcpCards();
       updateConfigPreview();
       renderRecent();
+    }
+
+    function updateToolPathWarnings() {
+      const renderdocWarning = $("#renderdocPathWarning");
+      if (renderdocWarning) {
+        const path = ($("#renderdocPath")?.value || "").trim();
+        let message = state.renderdocInvalidReason || "";
+        if (!path) {
+          message = "qrenderdoc.exe 路径未设置。检测环境时会先查找 C:\\Program Files\\RenderDoc\\qrenderdoc.exe。";
+        }
+        renderdocWarning.textContent = message;
+        renderdocWarning.classList.toggle("active", Boolean(message));
+      }
+
+      const mcpWarning = $("#mcpPathWarning");
+      if (mcpWarning) {
+        const path = ($("#mcpPath")?.value || "").trim();
+        let message = state.mcpInvalidReason || "";
+        if (!path) {
+          message = "RenderDocMCP 路径未设置。检测环境时会先查找 %LOCALAPPDATA%\\Programs\\RenderDocMCP\\RenderDocMCP.exe。";
+        }
+        mcpWarning.textContent = message;
+        mcpWarning.classList.toggle("active", Boolean(message));
+      }
+    }
+
+    function handleToolPathInput() {
+      const renderdocPath = ($("#renderdocPath")?.value || "").trim();
+      const mcpPath = ($("#mcpPath")?.value || "").trim();
+      state.renderdocReady = Boolean(renderdocPath);
+      state.mcpReady = Boolean(mcpPath);
+      state.renderdocInvalidReason = renderdocPath ? "" : "qrenderdoc.exe path is not configured";
+      state.mcpInvalidReason = mcpPath ? "" : "RenderDocMCP path is not configured";
+      updateStatus();
     }
 
     function updateMumuPathWarning() {
@@ -1781,6 +1833,25 @@
       }, 160);
     }
 
+    function showConfirmModal(options) {
+      options = options || {};
+      state.pendingConfirmAction = options.action || "";
+      $("#modalTitle").textContent = options.title || "确认操作？";
+      $("#modalCopy").textContent = options.body || "";
+      $("#modalConfirmButton").textContent = options.confirmText || "确认";
+      $("#modalConfirmButton").className = `btn ${options.confirmVariant || "danger"}`.trim();
+      $("#confirmModal").classList.add("active");
+    }
+
+    function closeConfirmModal() {
+      state.pendingConfirmAction = "";
+      $("#confirmModal").classList.remove("active");
+    }
+
+    function confirmAutoInstallTools() {
+      handleAction("auto-install-tools");
+    }
+
     function simulateAttach(forceConfirmed = false) {
       if (!$("#attachVulkan")?.checked && !$("#vulkanConfirmed")?.checked) {
         toast("需要确认 Vulkan", "真实 attach 前必须确认 MuMu12 已切换到 Vulkan。");
@@ -1788,7 +1859,13 @@
         return;
       }
       if ($("#forceCloseMumu")?.checked && !forceConfirmed) {
-        $("#confirmModal").classList.add("active");
+        showConfirmModal({
+          action: "force-attach",
+          title: "确认强制关闭 MuMu12？",
+          body: "这一步会调用 attach --force 并终止正在运行的 MuMu 进程。",
+          confirmText: "确认强制关闭",
+          confirmVariant: "danger",
+        });
         return;
       }
       log("开始模拟 attach：rdc-auto attach --yes-vulkan");
@@ -1841,14 +1918,14 @@
         }
         if (backendJobActions[action]) {
           const backendAction = backendJobActions[action];
-          if (action === "check-env" || action === "install-env") {
+          if (action === "check-env" || action === "install-env" || action === "install-mcp" || action === "auto-install-tools") {
             const saveResponse = await callBackend("save_environment", collectEnvironmentParams());
             if (!saveResponse.ok) return;
             applyBackendStatus(saveResponse.data);
           }
           const params = collectActionParams(action);
           const progressSelector = progressSelectorForAction(action);
-          await runJobAction(backendAction, params, progressSelector, (result) => {
+          const result = await runJobAction(backendAction, params, progressSelector, (result) => {
             if (result && result.rdc_path) {
               state.lastRdcPath = result.rdc_path;
               setInputValue("rdcPath", result.rdc_path);
@@ -1858,6 +1935,9 @@
             log(`提示：${message.title} - ${message.body}`);
             toast(message.title, message.body);
           });
+          if (action === "check-env" && shouldPromptAutoInstall(result)) {
+            promptAutoInstallTools();
+          }
           await refreshRecentRdcFiles();
           return;
         }
@@ -1866,14 +1946,6 @@
           if (response.ok) {
             applyBackendStatus(response.data);
             toast("Config saved", "Environment config saved.");
-          }
-          return;
-        }
-        if (action === "save-mcp") {
-          const response = await callBackend("save_mcp", collectMcpParams());
-          if (response.ok) {
-            applyBackendStatus(response.data);
-            toast("Config saved", "MCP config saved.");
           }
           return;
         }
@@ -1997,7 +2069,7 @@
           break;
         case "install-mcp":
           log("开始模拟安装/修复 RenderDocMCP");
-          runProgress("#mcpProgress", () => {
+          runProgress("#envProgress", () => {
             state.mcpReady = true;
             state.mcpRunning = true;
             state.mcpExtensionLoaded = true;
@@ -2017,15 +2089,34 @@
         case "check-env":
           log("开始模拟环境检测");
           runProgress("#envProgress", () => {
+            state.renderdocReady = Boolean(($("#renderdocPath")?.value || "").trim());
+            state.mcpReady = Boolean(($("#mcpPath")?.value || "").trim());
+            state.mcpRunning = state.mcpReady;
+            state.mcpExtensionLoaded = state.mcpReady;
+            state.renderdocInvalidReason = state.renderdocReady ? "" : "qrenderdoc.exe path is not configured";
+            state.mcpInvalidReason = state.mcpReady ? "" : "RenderDocMCP path is not configured";
+            state.mumuReady = Boolean(($("#mumuRoot")?.value || "").trim());
+            state.mumuInvalidReason = state.mumuReady ? "" : "MuMu12 root directory is not configured";
+            updateStatus();
+            toast("环境检测完成", "RenderDoc、MCP、MuMu12 示例状态已刷新。");
+            log("setup check complete");
+            if (!state.renderdocReady && !state.mcpReady) promptAutoInstallTools();
+          });
+          break;
+        case "auto-install-tools":
+          log("开始模拟自动安装 RenderDoc 和 RenderDocMCP");
+          runProgress("#envProgress", () => {
             state.renderdocReady = true;
             state.mcpReady = true;
             state.mcpRunning = true;
             state.mcpExtensionLoaded = true;
-            state.mumuReady = Boolean(($("#mumuRoot")?.value || "").trim());
-            state.mumuInvalidReason = state.mumuReady ? "" : "MuMu12 root directory is not configured";
+            state.renderdocInvalidReason = "";
+            state.mcpInvalidReason = "";
+            setInputValue("renderdocPath", "C:\\Program Files\\RenderDoc\\qrenderdoc.exe");
+            setInputValue("mcpPath", "%LOCALAPPDATA%\\Programs\\RenderDocMCP\\RenderDocMCP.exe");
             updateStatus();
-            toast("环境检测完成", "RenderDoc、MCP、MuMu12 示例状态均为可用。");
-            log("setup check complete");
+            toast("自动安装完成", "已模拟安装 RenderDoc 和 RenderDocMCP。");
+            log("auto tool install complete");
           });
           break;
         case "install-env":
@@ -2101,14 +2192,20 @@
         case "clear-log":
           $("#logLines").textContent = "";
           break;
-        case "cancel-force":
-          $("#confirmModal").classList.remove("active");
-          log("取消强制关闭 MuMu");
+        case "cancel-modal":
+          closeConfirmModal();
+          log("取消确认操作");
           break;
-        case "confirm-force":
-          $("#confirmModal").classList.remove("active");
-          log("用户确认模拟 --force");
-          simulateAttach(true);
+        case "confirm-modal":
+          const pendingAction = state.pendingConfirmAction;
+          closeConfirmModal();
+          if (pendingAction === "force-attach") {
+            log("用户确认模拟 --force");
+            simulateAttach(true);
+          } else if (pendingAction === "auto-install-tools") {
+            log("用户确认自动安装 RenderDoc 和 RenderDocMCP");
+            confirmAutoInstallTools();
+          }
           break;
       }
     }
@@ -2179,6 +2276,7 @@
       if (node) {
         node.addEventListener("input", updateConfigPreview);
         if (id === "mumuRoot") node.addEventListener("input", handleMumuRootInput);
+        if (id === "renderdocPath" || id === "mcpPath") node.addEventListener("input", handleToolPathInput);
       }
     });
     const captureOutNode = document.getElementById("captureOut");

@@ -6,9 +6,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+import urllib.error
 import urllib.request
 
 from .config import AppConfig, app_data_dir
+from .errors import DependencyMissing
 
 
 def is_release_setup_asset_name(name: str) -> bool:
@@ -58,13 +60,19 @@ class McpInstaller:
     @staticmethod
     def _fetch_json(url: str) -> dict:
         request = urllib.request.Request(url, headers={"User-Agent": "rdc-auto"})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise DependencyMissing(_github_http_error_message(exc, "checking the latest RenderDocMCP release")) from exc
 
     @staticmethod
     def _download(url: str, target: Path) -> object:
         target.parent.mkdir(parents=True, exist_ok=True)
-        return urllib.request.urlretrieve(url, target)
+        try:
+            return urllib.request.urlretrieve(url, target)
+        except urllib.error.HTTPError as exc:
+            raise DependencyMissing(_github_http_error_message(exc, "downloading the RenderDocMCP installer")) from exc
 
     def latest_release_asset(self) -> ReleaseAsset:
         release = self.fetch_json(self.config.mcp.release_api_url)
@@ -88,6 +96,8 @@ class McpInstaller:
         if configured and configured.is_file():
             if allow_configured:
                 return configured
+        if configured and allow_configured:
+            raise DependencyMissing(f"Configured RenderDocMCP executable was not found: {configured}")
 
         candidates = []
         install_dir = Path(self.config.mcp.install_dir) if self.config.mcp.install_dir else app_data_dir() / "mcp"
@@ -123,7 +133,10 @@ class McpInstaller:
 
     def ensure_installed(self) -> Path:
         asset = self.latest_release_asset()
-        existing = self.discover_executable(allow_configured=True)
+        try:
+            existing = self.discover_executable(allow_configured=True)
+        except DependencyMissing:
+            existing = None
         if existing and self._config_matches_release(asset):
             return existing
 
@@ -144,3 +157,21 @@ class McpInstaller:
             raise FileNotFoundError("RenderDocMCP release setup install is not recorded. Run rdc-auto setup.")
         if not found:
             raise FileNotFoundError("RenderDocMCP executable was not found. Run rdc-auto setup.")
+
+
+def _github_http_error_message(exc: urllib.error.HTTPError, action: str) -> str:
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        body = ""
+    lower = f"{exc.reason} {body}".lower()
+    if exc.code == 403 and "rate limit" in lower:
+        return (
+            f"GitHub API rate limit exceeded while {action}. "
+            "RenderDocMCP releases are checked through GitHub without authentication, and GitHub temporarily "
+            "blocked the request. Wait a while and retry, or install RenderDocMCP manually and set the "
+            "RenderDocMCP.exe path in Environment Settings."
+        )
+    detail = body.strip() or str(exc.reason)
+    return f"HTTP {exc.code} while {action}: {detail}"
