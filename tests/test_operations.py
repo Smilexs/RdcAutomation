@@ -9,6 +9,7 @@ from rdc_auto.errors import DependencyMissing, UserActionRequired
 from rdc_auto.operations import (
     OperationContext,
     check_environment,
+    export_assets,
     release_session,
     restart_mcp,
     setup_renderdoc,
@@ -170,6 +171,37 @@ def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_
     assert result["mcp_executable_path"] == str(exe)
     assert cfg.mcp.executable_path == str(exe)
     assert load_config().mcp.executable_path == str(exe)
+
+
+def test_export_assets_persists_source_rdc_path(monkeypatch, tmp_path):
+    cfg = AppConfig.default()
+    rdc_path = tmp_path / "manual.rdc"
+    output_dir = tmp_path / "out"
+    saved = []
+
+    class FakeExportService:
+        def __init__(self, mcp):
+            self.mcp = mcp
+
+        def export(self, rdc_path_arg, output_dir_arg, assets):
+            assert rdc_path_arg == rdc_path
+            assert output_dir_arg == output_dir
+            assert assets == "textures"
+            return {"source_rdc": str(rdc_path_arg)}
+
+    monkeypatch.setattr("rdc_auto.operations.mcp_client", lambda config: "mcp")
+    monkeypatch.setattr("rdc_auto.operations.ExportService", FakeExportService)
+
+    result = export_assets(
+        OperationContext(config=cfg, save_config_fn=lambda config: saved.append(config.capture.last_rdc_path)),
+        rdc_path=rdc_path,
+        output_dir=output_dir,
+        assets="textures",
+    )
+
+    assert result == {"source_rdc": str(rdc_path)}
+    assert cfg.capture.last_rdc_path == str(rdc_path)
+    assert saved == [str(rdc_path)]
 
 
 def test_check_environment_rejects_invalid_configured_renderdoc_path(monkeypatch, tmp_path):

@@ -229,6 +229,14 @@ def test_export_rdc_and_eid_defaults_are_empty_until_recent_capture():
     assert "mumu12_20260617_160827.rdc" not in export_view
 
 
+def test_export_rdc_selection_is_persisted_through_backend():
+    html = gui_index_path().read_text(encoding="utf-8")
+
+    assert 'async function persistCapturePaths()' in html
+    assert 'callBackend("save_capture_paths"' in html
+    assert 'node.addEventListener("change", persistCapturePaths)' in html
+
+
 def test_export_open_directory_routes_to_backend_open_path():
     html = gui_index_path().read_text(encoding="utf-8")
 

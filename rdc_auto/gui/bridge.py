@@ -95,6 +95,19 @@ class GuiBridge:
         except Exception as exc:
             return self._fail(exc)
 
+    def save_capture_paths(self, payload: dict) -> dict:
+        try:
+            payload = payload or {}
+            cfg = load_config()
+            if "rdc_path" in payload:
+                cfg.capture.last_rdc_path = str(payload.get("rdc_path", "")).strip()
+            if "output_dir" in payload:
+                cfg.capture.last_output_dir = str(payload.get("output_dir", "")).strip()
+            save_config(cfg)
+            return self._ok(build_status_snapshot(cfg), logs=["capture paths saved"])
+        except Exception as exc:
+            return self._fail(exc)
+
     def test_ai(self, payload: dict | None = None) -> dict:
         try:
             return self._ok({"connected": True, "mode": "frontend-only"}, logs=["AI test uses local GUI mode"])

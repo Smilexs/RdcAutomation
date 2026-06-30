@@ -153,6 +153,8 @@ def capture(ctx: OperationContext, output_dir: str | Path, timeout_seconds: int)
 def export_assets(ctx: OperationContext, rdc_path: str | Path, output_dir: str | Path, assets: str) -> dict:
     cfg = ctx.cfg()
     manifest = ExportService(mcp_client(cfg)).export(rdc_path, output_dir, assets)
+    cfg.capture.last_rdc_path = str(rdc_path)
+    cfg.capture.last_output_dir = str(output_dir)
     ctx.save()
     return manifest
 

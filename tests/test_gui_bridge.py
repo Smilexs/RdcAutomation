@@ -166,6 +166,21 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
     assert load_config().mcp.executable_path == "C:\\Users\\me\\AppData\\Local\\Programs\\RenderDocMCP\\RenderDocMCP.exe"
 
 
+def test_bridge_save_capture_paths_updates_last_rdc_and_output_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    bridge = GuiBridge(run_jobs_inline=True)
+    rdc_path = tmp_path / "captures" / "manual.rdc"
+    output_dir = tmp_path / "exports"
+
+    response = bridge.save_capture_paths({"rdc_path": str(rdc_path), "output_dir": str(output_dir)})
+
+    assert response["ok"] is True
+    cfg = load_config()
+    assert cfg.capture.last_rdc_path == str(rdc_path)
+    assert cfg.capture.last_output_dir == str(output_dir)
+    assert response["data"]["paths"]["last_rdc_path"] == str(rdc_path)
+
+
 def test_bridge_start_job_supports_renderdoc_and_mcp_setup(monkeypatch):
     bridge = GuiBridge(run_jobs_inline=True)
     calls = []

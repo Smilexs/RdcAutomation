@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 import urllib.error
 import urllib.request
 
@@ -24,6 +25,7 @@ class ReleaseAsset:
     download_url: str
     digest: str = ""
     release_tag: str = ""
+    local_path: str = ""
 
 
 def parse_release_asset(release: dict) -> ReleaseAsset:
@@ -51,11 +53,17 @@ class McpInstaller:
         fetch_json: JsonFetcher | None = None,
         downloader: Callable[[str, Path], object] | None = None,
         runner: Runner = subprocess.run,
+        local_installer_dirs: Iterable[str | Path] | None = None,
     ):
         self.config = config
         self.fetch_json = fetch_json or self._fetch_json
         self.downloader = downloader or self._download
         self.runner = runner
+        self.local_installer_dirs = (
+            [Path(path) for path in local_installer_dirs]
+            if local_installer_dirs is not None
+            else _default_local_installer_dirs(config)
+        )
 
     @staticmethod
     def _fetch_json(url: str) -> dict:
@@ -78,10 +86,32 @@ class McpInstaller:
         release = self.fetch_json(self.config.mcp.release_api_url)
         return parse_release_asset(release)
 
+    def local_release_asset(self) -> ReleaseAsset | None:
+        candidates: list[Path] = []
+        for directory in self.local_installer_dirs:
+            if directory.is_dir():
+                candidates.extend(
+                    path
+                    for path in directory.glob("RenderDocMCP-Setup-*.exe")
+                    if path.is_file() and is_release_setup_asset_name(path.name)
+                )
+
+        configured = Path(self.config.mcp.installer_path) if self.config.mcp.installer_path else None
+        if configured and configured.is_file() and is_release_setup_asset_name(configured.name):
+            candidates.append(configured)
+
+        if not candidates:
+            return None
+
+        local_path = max(_unique_paths(candidates), key=lambda path: (path.stat().st_mtime, path.name.lower()))
+        return ReleaseAsset(name=local_path.name, download_url="", local_path=str(local_path))
+
     def download_latest_installer(self) -> Path:
         return self.download_asset(self.latest_release_asset())
 
     def download_asset(self, asset: ReleaseAsset) -> Path:
+        if asset.local_path:
+            return Path(asset.local_path)
         downloads = Path(self.config.mcp.install_dir or app_data_dir() / "mcp") / "downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         target = downloads / asset.name
@@ -132,7 +162,7 @@ class McpInstaller:
         return True
 
     def ensure_installed(self) -> Path:
-        asset = self.latest_release_asset()
+        asset = self.local_release_asset() or self.latest_release_asset()
         try:
             existing = self.discover_executable(allow_configured=True)
         except DependencyMissing:
@@ -141,6 +171,7 @@ class McpInstaller:
             return existing
 
         installer = self.download_asset(asset)
+        Path(self.config.mcp.install_dir or app_data_dir() / "mcp").mkdir(parents=True, exist_ok=True)
         self.run_installer(installer)
         found = self.discover_executable(allow_configured=False)
         if not found:
@@ -175,3 +206,32 @@ def _github_http_error_message(exc: urllib.error.HTTPError, action: str) -> str:
         )
     detail = body.strip() or str(exc.reason)
     return f"HTTP {exc.code} while {action}: {detail}"
+
+
+def _default_local_installer_dirs(config: AppConfig) -> list[Path]:
+    roots: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        roots.append(Path(meipass))
+    if getattr(sys, "frozen", False):
+        roots.append(Path(sys.executable).resolve().parent)
+    roots.append(Path.cwd())
+
+    install_dir = Path(config.mcp.install_dir) if config.mcp.install_dir else app_data_dir() / "mcp"
+    dirs: list[Path] = []
+    for root in roots:
+        dirs.extend([root / "installers", root])
+    dirs.append(install_dir / "downloads")
+    return _unique_paths(dirs)
+
+
+def _unique_paths(paths: Iterable[Path]) -> list[Path]:
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in paths:
+        key = str(path.resolve()) if path.exists() else str(path.absolute())
+        if key.lower() in seen:
+            continue
+        seen.add(key.lower())
+        unique.append(path)
+    return unique

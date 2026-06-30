@@ -212,7 +212,13 @@ def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tm
         installed.write_bytes(b"new")
         return subprocess.CompletedProcess(args, 0)
 
-    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: release,
+        downloader=downloader,
+        runner=runner,
+        local_installer_dirs=[],
+    )
 
     assert installer.ensure_installed() == tmp_path / "mcp" / "RenderDocMCP.exe"
     assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
@@ -222,6 +228,42 @@ def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tm
         ("download", "https://example/RenderDocMCP-Setup-1.0.0.exe", "RenderDocMCP-Setup-1.0.0.exe"),
         ("run", str(tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe")),
     ]
+
+
+def test_ensure_installed_prefers_local_setup_exe_without_fetching_latest_release(tmp_path):
+    local_dir = tmp_path / "bundle" / "installers"
+    local_dir.mkdir(parents=True)
+    setup = local_dir / "RenderDocMCP-Setup-1.0.0.exe"
+    setup.write_bytes(b"setup")
+    cfg = AppConfig.default()
+    cfg.mcp.install_dir = str(tmp_path / "mcp")
+    calls = []
+
+    def fetch_json(url):
+        raise AssertionError("local installer should be used before GitHub")
+
+    def downloader(url, target):
+        raise AssertionError("local installer should not be downloaded")
+
+    def runner(args, check):
+        calls.append(("run", args[0]))
+        installed = tmp_path / "mcp" / "RenderDocMCP.exe"
+        installed.write_bytes(b"new")
+        return subprocess.CompletedProcess(args, 0)
+
+    installer = McpInstaller(
+        cfg,
+        fetch_json=fetch_json,
+        downloader=downloader,
+        runner=runner,
+        local_installer_dirs=[local_dir],
+    )
+
+    assert installer.ensure_installed() == tmp_path / "mcp" / "RenderDocMCP.exe"
+    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
+    assert cfg.mcp.installer_path == str(setup)
+    assert cfg.mcp.executable_path == str(tmp_path / "mcp" / "RenderDocMCP.exe")
+    assert calls == [("run", str(setup))]
 
 
 def test_ensure_installed_does_not_record_latest_release_when_installer_fails(tmp_path):
@@ -252,7 +294,13 @@ def test_ensure_installed_does_not_record_latest_release_when_installer_fails(tm
     def runner(args, check):
         raise subprocess.CalledProcessError(1, args)
 
-    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: release,
+        downloader=downloader,
+        runner=runner,
+        local_installer_dirs=[],
+    )
 
     with pytest.raises(subprocess.CalledProcessError):
         installer.ensure_installed()
@@ -287,7 +335,13 @@ def test_ensure_installed_accepts_configured_exe_only_when_release_asset_matches
     def runner(args, check):
         raise AssertionError("current release should not be installed")
 
-    installer = McpInstaller(cfg, fetch_json=lambda url: release, downloader=downloader, runner=runner)
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: release,
+        downloader=downloader,
+        runner=runner,
+        local_installer_dirs=[],
+    )
 
     assert installer.ensure_installed() == exe
 

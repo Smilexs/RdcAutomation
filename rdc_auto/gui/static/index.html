@@ -1331,6 +1331,7 @@
       if (options.updateLastRdc) state.lastRdcPath = value;
       clearEidRows();
       updateStatus();
+      persistCapturePaths();
     }
 
     function applyDialogValue(selector, value, options) {
@@ -1382,6 +1383,17 @@
         output_dir: $("#exportOut")?.value || "",
         event_id: $("#eidInput")?.value || ""
       };
+    }
+
+    async function persistCapturePaths() {
+      if (!window.RdcBackend.available()) return;
+      const rdcPath = ($("#rdcPath")?.value || $("#eidRdcPath")?.value || "").trim();
+      const outputDir = ($("#exportOut")?.value || "").trim();
+      const response = await callBackend("save_capture_paths", {
+        rdc_path: rdcPath,
+        output_dir: outputDir
+      });
+      if (response.ok) applyBackendStatus(response.data);
     }
 
     function progressSelectorForAction(action) {
@@ -2001,6 +2013,7 @@
           return;
         }
         if (action === "load-eid-list") {
+          await persistCapturePaths();
           const response = await callBackend("load_eid_list", {
             rdc_path: $("#eidRdcPath")?.value || $("#rdcPath")?.value || ""
           });
@@ -2303,9 +2316,12 @@
       const node = document.getElementById(id);
       if (node) {
         node.addEventListener("input", () => {
+          const value = node.value.trim();
+          if (value) state.lastRdcPath = value;
           clearEidRows();
           updateConfigPreview();
         });
+        node.addEventListener("change", persistCapturePaths);
       }
     });
 
