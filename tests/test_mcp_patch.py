@@ -244,3 +244,197 @@ class MCPBridgeServer(object):
     assert "if self.dispatcher is not None:\n                response = self.dispatcher.call" in repaired
     assert "else:\n                response = self.handler.handle(request)" in repaired
     py_compile.compile(str(socket_server), doraise=True)
+
+
+def test_patch_renderdoc_mcp_extension_wraps_replay_callback_exceptions(tmp_path):
+    exe = tmp_path / "renderdoc-mcp.exe"
+    exe.write_bytes(b"exe")
+    extension = tmp_path / "renderdoc_extension"
+    extension.mkdir()
+    facade = extension / "renderdoc_facade.py"
+    facade.write_text(
+        '''class RenderDocFacade:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def _invoke(self, callback):
+        """Invoke callback on replay thread via BlockInvoke"""
+        self.ctx.Replay().BlockInvoke(callback)
+''',
+        encoding="utf-8",
+    )
+
+    assert patch_renderdoc_mcp_extension(exe) is True
+
+    patched = facade.read_text(encoding="utf-8")
+    assert "rdc-auto-renderdocmcp-replay-invoke-patch-v1" in patched
+    assert "def guarded_callback(controller):" in patched
+    assert "traceback.format_exc()" in patched
+    assert "BlockInvoke(guarded_callback)" in patched
+    py_compile.compile(str(facade), doraise=True)
+
+
+def test_patch_renderdoc_mcp_extension_wraps_replay_callback_when_connect_patch_already_exists(tmp_path):
+    exe = tmp_path / "renderdoc-mcp.exe"
+    exe.write_bytes(b"exe")
+    extension = tmp_path / "renderdoc_extension"
+    extension.mkdir()
+    facade = extension / "renderdoc_facade.py"
+    facade.write_text(
+        '''# rdc-auto-capture-connect-patch-v2
+class RenderDocFacade:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def _invoke(self, callback):
+        """Invoke callback on replay thread via BlockInvoke"""
+        self.ctx.Replay().BlockInvoke(callback)
+''',
+        encoding="utf-8",
+    )
+
+    assert patch_renderdoc_mcp_extension(exe) is True
+
+    patched = facade.read_text(encoding="utf-8")
+    assert "rdc-auto-capture-connect-patch-v2" in patched
+    assert "rdc-auto-renderdocmcp-replay-invoke-patch-v1" in patched
+    assert "BlockInvoke(guarded_callback)" in patched
+
+
+def test_patch_renderdoc_mcp_extension_skips_short_optional_mesh_attributes(tmp_path, monkeypatch):
+    exe = tmp_path / "renderdoc-mcp.exe"
+    exe.write_bytes(b"exe")
+    extension = tmp_path / "renderdoc_extension"
+    services = extension / "services"
+    services.mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    mesh_service = services / "mesh_service.py"
+    mesh_service.write_text(
+        '''def _normalize3(v):
+    m = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) ** 0.5
+    if m < 1e-12:
+        return [0.0, 0.0, 0.0]
+    return [v[0] / m, v[1] / m, v[2] / m]
+
+
+class MeshService:
+    def export_mesh_to_file(self):
+        out_nrm = []
+        out_tan = []
+        out_uv0 = []
+        out_uv1 = []
+        uv0 = uv1 = nrm = tan = [[1.0, 2.0]]
+        bake_world = False
+        def callback():
+            for i in range(1):
+                if nrm is not None:
+                    nv = nrm[i]
+                    if bake_world:
+                        out_nrm.append(_bake_normal_worldtoobject(w2o, nv))
+                    else:
+                        out_nrm.append(_normalize3([nv[0], nv[1], nv[2]]))
+
+                if tan is not None:
+                    tv = tan[i]
+                    tw = tv[3] if len(tv) > 3 else 1.0
+                    if bake_world:
+                        d = _bake_dir_objecttoworld(o2w, tv)
+                    else:
+                        d = _normalize3([tv[0], tv[1], tv[2]])
+                    out_tan.append([d[0], d[1], d[2], tw])
+
+            if uv0 is not None:
+                raw_json["uv0"] = [[u[0], u[1]] for u in uv0]
+            if uv1 is not None:
+                raw_json["uv1"] = [[u[0], u[1]] for u in uv1]
+''',
+        encoding="utf-8",
+    )
+
+    assert patch_renderdoc_mcp_extension(exe) is True
+
+    patched = mesh_service.read_text(encoding="utf-8")
+    assert "rdc-auto-renderdocmcp-mesh-optional-attrs-patch-v1" in patched
+    assert "_rdc_auto_has_components(nv, 3)" in patched
+    assert "_rdc_auto_has_components(tv, 3)" in patched
+    assert "_rdc_auto_vec2_list(uv0)" in patched
+    assert "_rdc_auto_vec2_list(uv1)" in patched
+    py_compile.compile(str(mesh_service), doraise=True)
+
+
+def test_patch_renderdoc_mcp_extension_infers_mesh_slots_when_request_omits_slot_params(tmp_path, monkeypatch):
+    exe = tmp_path / "renderdoc-mcp.exe"
+    exe.write_bytes(b"exe")
+    extension = tmp_path / "renderdoc_extension"
+    services = extension / "services"
+    services.mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+
+    (extension / "request_handler.py").write_text(
+        '''    def _handle_export_mesh_to_file(self, params):
+        """Handle export_mesh_to_file request"""
+        event_id = params.get("event_id")
+        if event_id is None:
+            raise ValueError("event_id is required")
+        output_path = params.get("output_path")
+        if not output_path:
+            raise ValueError("output_path is required")
+        return self.facade.export_mesh_to_file(
+            int(event_id),
+            output_path,
+            bool(params.get("bake_world", True)),
+            int(params.get("pos_slot", 0)),
+            int(params.get("normal_slot", 1)),
+            int(params.get("tangent_slot", 2)),
+            int(params.get("uv0_slot", 3)),
+            int(params.get("uv1_slot", 4)),
+            int(params.get("extra_slot", 5)),
+            int(params.get("o2w_offset", 32)),
+            int(params.get("w2o_offset", 96)),
+        )
+''',
+        encoding="utf-8",
+    )
+    mesh_service = services / "mesh_service.py"
+    mesh_service.write_text(
+        '''def _normalize3(v):
+    m = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) ** 0.5
+    if m < 1e-12:
+        return [0.0, 0.0, 0.0]
+    return [v[0] / m, v[1] / m, v[2] / m]
+
+
+class MeshService:
+    def export_mesh_to_file(self, event_id, output_path, bake_world=True,
+                            pos_slot=0, normal_slot=1, tangent_slot=2,
+                            uv0_slot=3, uv1_slot=4, extra_slot=5,
+                            o2w_offset=32, w2o_offset=96):
+        def callback(controller):
+            attrs_by_slot = {a["vertex_buffer_slot"]: a for a in data["attributes"]}
+
+            def vals(slot):
+                a = attrs_by_slot.get(slot)
+                return a["values"] if a else None
+
+            pos = vals(pos_slot)
+            nrm = vals(normal_slot)
+            tan = vals(tangent_slot)
+            uv0 = vals(uv0_slot)
+            uv1 = vals(uv1_slot)
+            extra = vals(extra_slot)
+''',
+        encoding="utf-8",
+    )
+
+    assert patch_renderdoc_mcp_extension(exe) is True
+
+    patched_request = (extension / "request_handler.py").read_text(encoding="utf-8")
+    assert 'params.get("pos_slot", params.get("posSlot", -1))' in patched_request
+    assert 'params.get("tangent_slot", params.get("tangentSlot", -1))' in patched_request
+
+    patched_mesh = (services / "mesh_service.py").read_text(encoding="utf-8")
+    assert "rdc-auto-renderdocmcp-mesh-slot-inference-patch-v1" in patched_mesh
+    assert "slot_map = _rdc_auto_infer_slot_map(" in patched_mesh
+    assert 'pos_slot = slot_map["position"]' in patched_mesh
+    assert 'uv0_slot = slot_map["uv0"]' in patched_mesh
+    py_compile.compile(str(mesh_service), doraise=True)

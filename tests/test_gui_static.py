@@ -133,7 +133,7 @@ def test_gui_index_routes_choose_actions_to_backend_dialogs():
     assert 'callBackend("choose_file"' in html
     assert "function applyDialogValue" in html
     assert "state.backendConfigPreview = null" in html
-    assert "state.lastRdcPath = response.data.path" in html
+    assert 'applyRdcSelection(response.data.path, { updateLastRdc: true })' in html
 
 
 def test_gui_index_routes_eid_actions_to_backend():
@@ -215,6 +215,18 @@ def test_export_panel_uses_current_backend_copy_and_asset_options():
     assert '<option value="meshes">所有模型</option>' in export_view
     assert '<option value="both">' not in export_view
     assert "前端模拟" not in export_view
+
+
+def test_export_rdc_and_eid_defaults_are_empty_until_recent_capture():
+    html = gui_index_path().read_text(encoding="utf-8")
+    export_view = html[html.index('id="view-export"') : html.index('id="view-assistant"')]
+
+    assert '<input id="rdcPath" value="" />' in export_view
+    assert '<input id="eidInput" value="" />' in export_view
+    assert '<input id="eidRdcPath" value="" />' in export_view
+    assert 'lastRdcPath: "",' in html
+    assert "let eidRows = [];" in html
+    assert "mumu12_20260617_160827.rdc" not in export_view
 
 
 def test_export_open_directory_routes_to_backend_open_path():

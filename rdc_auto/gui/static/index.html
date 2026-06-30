@@ -1062,7 +1062,7 @@
                 <div class="form-grid">
                   <div class="form-row full">
                     <label for="rdcPath">RDC 文件</label>
-                    <input id="rdcPath" value="D:\RdcCaptures\mumu12_20260617_160827.rdc" />
+                    <input id="rdcPath" value="" />
                   </div>
                   <div class="form-row">
                     <label for="assetType">导出类型</label>
@@ -1090,11 +1090,11 @@
                 <div class="form-grid">
                   <div class="form-row">
                     <label for="eidInput">手动输入 EID</label>
-                    <input id="eidInput" value="1203" />
+                    <input id="eidInput" value="" />
                   </div>
                   <div class="form-row">
                     <label for="eidRdcPath">RDC 文件</label>
-                    <input id="eidRdcPath" value="D:\RdcCaptures\mumu12_20260617_160827.rdc" />
+                    <input id="eidRdcPath" value="" />
                   </div>
                 </div>
                 <div class="toolbar">
@@ -1217,7 +1217,7 @@
       mumuReady: false,
       mumuInvalidReason: "MuMu12 root directory is not configured",
       sessionAttached: false,
-      lastRdcPath: "D:\\RdcCaptures\\mumu12_20260617_160827.rdc",
+      lastRdcPath: "",
       recentRdcFiles: [],
       recentRdcLoadedFromBackend: false,
       backendConfigPreview: null,
@@ -1233,12 +1233,7 @@
       logs: ["日志与配置", "查看运行日志和配置摘要。"],
     };
 
-    let eidRows = [
-      { eid: 1203, name: "DrawIndexed / Character_Body", mesh: "是", textures: 4 },
-      { eid: 1207, name: "DrawIndexed / Weapon_Main", mesh: "是", textures: 3 },
-      { eid: 1214, name: "Draw / UI_Overlay", mesh: "否", textures: 2 },
-      { eid: 1221, name: "DrawIndexed / Scene_Prop", mesh: "是", textures: 5 },
-    ];
+    let eidRows = [];
 
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -1320,6 +1315,22 @@
     function setValueIfPresent(id, value) {
       const node = document.getElementById(id);
       if (node && value !== undefined && value !== null && value !== "") node.value = value;
+    }
+
+    function clearEidRows() {
+      eidRows = [];
+      renderEidTable();
+    }
+
+    function applyRdcSelection(path, options) {
+      const value = String(path || "").trim();
+      if (!value) return;
+      options = options || {};
+      setInputValue("rdcPath", value);
+      setInputValue("eidRdcPath", value);
+      if (options.updateLastRdc) state.lastRdcPath = value;
+      clearEidRows();
+      updateStatus();
     }
 
     function applyDialogValue(selector, value, options) {
@@ -1502,15 +1513,18 @@
       state.mcpExtensionLoaded = Boolean(mcp.extension_loaded);
       state.mcpVersion = mcp.version || state.mcpVersion;
       state.sessionAttached = Boolean(session.attached);
-      if (paths.last_rdc_path) state.lastRdcPath = paths.last_rdc_path;
+      if (paths.last_rdc_path) {
+        state.lastRdcPath = paths.last_rdc_path;
+        if (!(($("#rdcPath")?.value || "").trim())) {
+          applyRdcSelection(paths.last_rdc_path, { updateLastRdc: true });
+        }
+      }
       state.backendConfigPreview = snapshot.config_preview || null;
       setValueIfPresent("renderdocPath", renderdoc.path);
       setValueIfPresent("mumuRoot", mumu.root_dir);
       setValueIfPresent("vmIndex", mumu.vm_index);
       setValueIfPresent("mcpPath", mcp.path);
       setValueIfPresent("captureOut", paths.last_output_dir);
-      setValueIfPresent("rdcPath", paths.last_rdc_path);
-      setValueIfPresent("eidRdcPath", paths.last_rdc_path);
       const preview = $("#configPreview");
       if (preview && snapshot.config_preview) preview.value = JSON.stringify(snapshot.config_preview, null, 2);
       updateStatus();
@@ -1724,6 +1738,9 @@
       if (response.ok) {
         state.recentRdcFiles = Array.isArray(response.data?.files) ? response.data.files : [];
         state.recentRdcLoadedFromBackend = true;
+        if (state.recentRdcFiles.length && !(($("#rdcPath")?.value || "").trim()) && !state.lastRdcPath) {
+          applyRdcSelection(state.recentRdcFiles[0], { updateLastRdc: true });
+        }
       }
       renderRecent();
     }
@@ -1889,9 +1906,7 @@
       state.lastRdcPath = `${dir}\\mumu12_${stamp}.rdc`;
       log(`开始模拟捕捉：rdc-auto capture --out ${dir}`);
       runProgress("#captureProgress", () => {
-        $("#rdcPath").value = state.lastRdcPath;
-        $("#eidRdcPath").value = state.lastRdcPath;
-        updateStatus();
+        applyRdcSelection(state.lastRdcPath, { updateLastRdc: true });
         toast("捕捉完成", `已模拟生成 ${state.lastRdcPath}`);
         log(`captured: ${state.lastRdcPath}`);
       });
@@ -1927,9 +1942,7 @@
           const progressSelector = progressSelectorForAction(action);
           const result = await runJobAction(backendAction, params, progressSelector, (result) => {
             if (result && result.rdc_path) {
-              state.lastRdcPath = result.rdc_path;
-              setInputValue("rdcPath", result.rdc_path);
-              setInputValue("eidRdcPath", result.rdc_path);
+              applyRdcSelection(result.rdc_path, { updateLastRdc: true });
             }
             const message = jobCompletionMessage(action, backendAction);
             log(`提示：${message.title} - ${message.body}`);
@@ -1975,9 +1988,7 @@
         if (action === "choose-rdc") {
           return callBackend("choose_file", {}).then((response) => {
             if (response.ok && response.data && response.data.path) {
-              state.lastRdcPath = response.data.path;
-              applyDialogValue("#rdcPath", response.data.path, { updateLastRdc: true });
-              applyDialogValue("#eidRdcPath", response.data.path);
+              applyRdcSelection(response.data.path, { updateLastRdc: true });
             }
           });
         }
@@ -2246,7 +2257,7 @@
 
       const useRdc = event.target.closest("[data-use-rdc]");
       if (useRdc) {
-        $("#rdcPath").value = useRdc.dataset.useRdc;
+        applyRdcSelection(useRdc.dataset.useRdc, { updateLastRdc: true });
         setView("export");
         setTab("normal-export");
         toast("已填入 RDC", "可以继续选择导出类型和输出目录。");
@@ -2288,6 +2299,15 @@
       });
       captureOutNode.addEventListener("change", refreshRecentRdcFiles);
     }
+    ["rdcPath", "eidRdcPath"].forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) {
+        node.addEventListener("input", () => {
+          clearEidRows();
+          updateConfigPreview();
+        });
+      }
+    });
 
     renderEidTable();
     if (window.RdcBackend.available()) {
