@@ -16,7 +16,7 @@ from .export_assets import ExportService
 from .log_setup import configure_logging
 from .mcp_client import FileIpcMcpClient
 from .mcp_installer import McpInstaller
-from .mcp_patch import patch_renderdoc_mcp_extension
+from .mcp_patch import patch_renderdoc_mcp_extension_dir
 from .paths import canonical_mumu_root, validate_mumu_root
 from .prompts import choose_option, prompt_path
 from .renderdoc_installer import RenderDocInstaller
@@ -214,7 +214,7 @@ def _sync_operations_hooks() -> None:
     _operations.MuMu12 = MuMu12
     _operations.ExportService = ExportService
     _operations.FileIpcMcpClient = FileIpcMcpClient
-    _operations.patch_renderdoc_mcp_extension = patch_renderdoc_mcp_extension
+    _operations.patch_renderdoc_mcp_extension_dir = patch_renderdoc_mcp_extension_dir
     _operations.canonical_mumu_root = canonical_mumu_root
     _operations.validate_mumu_root = validate_mumu_root
     _operations.prompt_path = prompt_path

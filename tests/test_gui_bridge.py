@@ -51,7 +51,7 @@ def test_build_status_snapshot_marks_unset_tool_paths_invalid():
     assert snapshot["renderdoc"]["ready"] is False
     assert snapshot["renderdoc"]["invalid_reason"] == "qrenderdoc.exe path is not configured"
     assert snapshot["mcp"]["ready"] is False
-    assert snapshot["mcp"]["invalid_reason"] == "RenderDocMCP path is not configured"
+    assert snapshot["mcp"]["invalid_reason"] == "RenderDocMCP extension is not configured"
 
 
 def test_build_status_snapshot_marks_missing_tool_paths_invalid(tmp_path):
@@ -185,6 +185,20 @@ def test_bridge_save_environment_updates_config(tmp_path, monkeypatch):
     assert response["ok"] is True
     assert response["data"]["mumu"]["vm_index"] == "1"
     assert load_config().mcp.executable_path == "C:\\Users\\me\\AppData\\Local\\Programs\\RenderDocMCP\\RenderDocMCP.exe"
+
+
+def test_bridge_save_mcp_accepts_extension_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
+    bridge = GuiBridge(run_jobs_inline=True)
+
+    response = bridge.save_mcp({"mcp_path": str(extension_dir)})
+
+    assert response["ok"] is True
+    cfg = load_config()
+    assert cfg.mcp.extension_dir == str(extension_dir)
+    assert cfg.mcp.executable_path == ""
 
 
 def test_bridge_save_capture_paths_updates_last_rdc_and_output_dir(tmp_path, monkeypatch):

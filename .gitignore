@@ -44,3 +44,9 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+
+# installers
+RenderDocMCP-Setup-*.exe
+
+# docs
+renderdocmcp-upstream-fixes-2026-06-30.md

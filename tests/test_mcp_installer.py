@@ -1,379 +1,107 @@
 from __future__ import annotations
 
-import io
-import subprocess
-import urllib.error
+import json
+from pathlib import Path
 
 import pytest
 
 from rdc_auto.config import AppConfig
 from rdc_auto.errors import DependencyMissing
-from rdc_auto.mcp_installer import McpInstaller, parse_release_asset
+from rdc_auto.mcp_installer import McpInstaller
 
 
-def test_parse_release_asset_picks_setup_exe():
-    release = {
-        "tag_name": "v1.0.0",
-        "assets": [
-            {"name": "source.zip", "browser_download_url": "https://example/source.zip"},
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-                "digest": "sha256:abc123",
-            },
-        ],
-    }
-
-    asset = parse_release_asset(release)
-
-    assert asset.name == "RenderDocMCP-Setup-1.0.0.exe"
-    assert asset.download_url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
-    assert asset.digest == "sha256:abc123"
-
-
-def test_parse_release_asset_ignores_other_setup_exes():
-    release = {
-        "tag_name": "v1.0.0",
-        "assets": [
-            {
-                "name": "OtherTool-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/OtherTool-Setup-1.0.0.exe",
-            },
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-            },
-        ],
-    }
-
-    asset = parse_release_asset(release)
-
-    assert asset.name == "RenderDocMCP-Setup-1.0.0.exe"
-    assert asset.download_url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
-
-
-def test_parse_release_asset_rejects_other_setup_exes():
-    release = {
-        "tag_name": "v1.0.0",
-        "assets": [
-            {
-                "name": "OtherTool-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/OtherTool-Setup-1.0.0.exe",
-            },
-        ],
-    }
-
-    with pytest.raises(ValueError):
-        parse_release_asset(release)
-
-
-def test_download_latest_installer_does_not_record_release_asset_before_install(tmp_path):
+def test_ensure_installed_syncs_embedded_source_and_installs_extension(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     cfg = AppConfig.default()
     cfg.mcp.install_dir = str(tmp_path / "mcp")
-    release = {
-        "tag_name": "v1.0.0",
-        "assets": [
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-                "digest": "sha256:abc123",
-            }
-        ],
-    }
+    source = _write_source_tree(tmp_path / "embedded" / "renderdoc_mcp")
 
-    def fetch_json(url):
-        assert url == cfg.mcp.release_api_url
-        return release
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: (_ for _ in ()).throw(AssertionError("GitHub must not be queried")),
+        downloader=lambda url, target: (_ for _ in ()).throw(AssertionError("installer must not be downloaded")),
+        runner=lambda args, check: (_ for _ in ()).throw(AssertionError("setup exe must not be run")),
+        source_roots=[source],
+    )
 
-    def downloader(url, target):
-        assert url == "https://example/RenderDocMCP-Setup-1.0.0.exe"
-        target.write_bytes(b"exe")
+    extension_dir = installer.ensure_installed()
 
-    installer = McpInstaller(cfg, fetch_json=fetch_json, downloader=downloader)
-    path = installer.download_latest_installer()
+    installed_source = Path(cfg.mcp.install_dir) / "renderdoc_mcp"
+    assert extension_dir == tmp_path / "Roaming" / "qrenderdoc" / "extensions" / "renderdoc_mcp_bridge"
+    assert (extension_dir / "extension.json").read_text(encoding="utf-8") == '{"name":"test"}'
+    assert (installed_source / "mcp_server" / "server.py").read_text(encoding="utf-8") == "def main():\n    pass\n"
+    assert not (installed_source / "mcp_server" / "__pycache__").exists()
+    assert cfg.mcp.source_path == str(installed_source)
+    assert cfg.mcp.extension_dir == str(extension_dir)
+    assert cfg.mcp.executable_path == ""
+    assert cfg.mcp.asset_name == "RenderDocMCP source"
+    assert cfg.mcp.release_tag == "v9.8.7"
 
-    assert path == tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe"
-    assert cfg.mcp.asset_name == ""
-    assert cfg.mcp.asset_digest == ""
-    assert cfg.mcp.installer_path == ""
+    ui_config = json.loads((tmp_path / "Roaming" / "qrenderdoc" / "UI.config").read_text(encoding="utf-8"))
+    assert "renderdoc_mcp_bridge" in ui_config["AlwaysLoad_Extensions"]
 
 
-def test_run_installer_executes_downloaded_exe(tmp_path):
-    setup = tmp_path / "RenderDocMCP-Setup-1.0.0.exe"
-    setup.write_bytes(b"exe")
-    calls = []
+def test_runtime_extension_dir_uses_recorded_extension_without_source_lookup(tmp_path):
     cfg = AppConfig.default()
+    extension_dir = tmp_path / "extensions" / "renderdoc_mcp_bridge"
+    extension_dir.mkdir(parents=True)
+    (extension_dir / "extension.json").write_text("{}", encoding="utf-8")
+    cfg.mcp.extension_dir = str(extension_dir)
 
-    def runner(args, check):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 0)
+    installer = McpInstaller(
+        cfg,
+        fetch_json=lambda url: (_ for _ in ()).throw(AssertionError("runtime must not query GitHub")),
+        downloader=lambda url, target: (_ for _ in ()).throw(AssertionError("runtime must not download")),
+        runner=lambda args, check: (_ for _ in ()).throw(AssertionError("runtime must not run installer")),
+        source_roots=[tmp_path / "missing"],
+    )
 
-    installer = McpInstaller(cfg, runner=runner)
-    installer.run_installer(setup)
-
-    assert calls == [[str(setup)]]
+    assert installer.runtime_extension_dir() == extension_dir
 
 
-def test_discover_executable_prefers_configured_path(tmp_path):
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
+def test_runtime_extension_dir_requires_setup_when_extension_is_missing(tmp_path):
     cfg = AppConfig.default()
-    cfg.mcp.executable_path = str(exe)
+    cfg.mcp.extension_dir = str(tmp_path / "missing" / "renderdoc_mcp_bridge")
 
-    installer = McpInstaller(cfg)
-
-    assert installer.discover_executable() == exe
-
-
-def test_discover_executable_rejects_invalid_configured_path(tmp_path):
-    cfg = AppConfig.default()
-    cfg.mcp.executable_path = str(tmp_path / "missing" / "RenderDocMCP.exe")
-    installer = McpInstaller(cfg)
-
-    with pytest.raises(DependencyMissing, match="Configured RenderDocMCP executable was not found"):
-        installer.discover_executable()
+    with pytest.raises(DependencyMissing, match="RenderDocMCP extension was not found"):
+        McpInstaller(cfg, source_roots=[tmp_path / "missing-source"]).runtime_extension_dir()
 
 
-def test_discover_executable_checks_localappdata_renderdocmcp(tmp_path, monkeypatch):
-    local_app_data = tmp_path / "LocalAppData"
-    exe = local_app_data / "RenderDocMCP" / "RenderDocMCP.exe"
-    exe.parent.mkdir(parents=True)
-    exe.write_bytes(b"exe")
-    cfg = AppConfig.default()
-    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
-
-    installer = McpInstaller(cfg)
-
-    assert installer.discover_executable() == exe
-    assert cfg.mcp.executable_path == str(exe)
-
-
-def test_discover_executable_checks_localappdata_programs_renderdocmcp(tmp_path, monkeypatch):
-    local_app_data = tmp_path / "LocalAppData"
-    exe = local_app_data / "Programs" / "RenderDocMCP" / "RenderDocMCP.exe"
-    exe.parent.mkdir(parents=True)
-    exe.write_bytes(b"exe")
-    cfg = AppConfig.default()
-    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
-
-    installer = McpInstaller(cfg)
-
-    assert installer.discover_executable() == exe
-    assert cfg.mcp.executable_path == str(exe)
-
-
-def test_fetch_json_explains_github_rate_limit(monkeypatch):
-    def fail_urlopen(request, timeout):
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest",
-            code=403,
-            msg="rate limit exceeded",
-            hdrs={},
-            fp=io.BytesIO(b'{"message":"API rate limit exceeded"}'),
-        )
-
-    monkeypatch.setattr("rdc_auto.mcp_installer.urllib.request.urlopen", fail_urlopen)
-
-    with pytest.raises(DependencyMissing) as exc_info:
-        McpInstaller._fetch_json("https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest")
-
-    message = str(exc_info.value)
-    assert "GitHub API rate limit" in message
-    assert "RenderDocMCP" in message
-
-
-def test_ensure_installed_reinstalls_stale_configured_exe_from_latest_release(tmp_path):
-    old_exe = tmp_path / "old" / "RenderDocMCP.exe"
-    old_exe.parent.mkdir()
-    old_exe.write_bytes(b"old")
+def test_ensure_installed_accepts_source_already_in_install_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     cfg = AppConfig.default()
     cfg.mcp.install_dir = str(tmp_path / "mcp")
-    cfg.mcp.executable_path = str(old_exe)
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-0.9.0.exe"
-    cfg.mcp.asset_digest = "sha256:old"
-    release = {
-        "assets": [
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-                "digest": "sha256:new",
-            }
-        ]
-    }
-    calls = []
+    source = _write_source_tree(Path(cfg.mcp.install_dir) / "renderdoc_mcp")
 
-    def downloader(url, target):
-        calls.append(("download", url, target.name))
-        target.write_bytes(b"setup")
+    extension_dir = McpInstaller(cfg, source_roots=[source]).ensure_installed()
 
-    def runner(args, check):
-        calls.append(("run", args[0]))
-        installed = tmp_path / "mcp" / "RenderDocMCP.exe"
-        installed.write_bytes(b"new")
-        return subprocess.CompletedProcess(args, 0)
-
-    installer = McpInstaller(
-        cfg,
-        fetch_json=lambda url: release,
-        downloader=downloader,
-        runner=runner,
-        local_installer_dirs=[],
-    )
-
-    assert installer.ensure_installed() == tmp_path / "mcp" / "RenderDocMCP.exe"
-    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
-    assert cfg.mcp.asset_digest == "sha256:new"
-    assert cfg.mcp.executable_path == str(tmp_path / "mcp" / "RenderDocMCP.exe")
-    assert calls == [
-        ("download", "https://example/RenderDocMCP-Setup-1.0.0.exe", "RenderDocMCP-Setup-1.0.0.exe"),
-        ("run", str(tmp_path / "mcp" / "downloads" / "RenderDocMCP-Setup-1.0.0.exe")),
-    ]
+    assert extension_dir.exists()
+    assert (source / "mcp_server" / "server.py").is_file()
 
 
-def test_ensure_installed_prefers_local_setup_exe_without_fetching_latest_release(tmp_path):
-    local_dir = tmp_path / "bundle" / "installers"
-    local_dir.mkdir(parents=True)
-    setup = local_dir / "RenderDocMCP-Setup-1.0.0.exe"
-    setup.write_bytes(b"setup")
+def test_discover_extension_accepts_legacy_executable_parent_extension(tmp_path):
     cfg = AppConfig.default()
-    cfg.mcp.install_dir = str(tmp_path / "mcp")
-    calls = []
-
-    def fetch_json(url):
-        raise AssertionError("local installer should be used before GitHub")
-
-    def downloader(url, target):
-        raise AssertionError("local installer should not be downloaded")
-
-    def runner(args, check):
-        calls.append(("run", args[0]))
-        installed = tmp_path / "mcp" / "RenderDocMCP.exe"
-        installed.write_bytes(b"new")
-        return subprocess.CompletedProcess(args, 0)
-
-    installer = McpInstaller(
-        cfg,
-        fetch_json=fetch_json,
-        downloader=downloader,
-        runner=runner,
-        local_installer_dirs=[local_dir],
-    )
-
-    assert installer.ensure_installed() == tmp_path / "mcp" / "RenderDocMCP.exe"
-    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-1.0.0.exe"
-    assert cfg.mcp.installer_path == str(setup)
-    assert cfg.mcp.executable_path == str(tmp_path / "mcp" / "RenderDocMCP.exe")
-    assert calls == [("run", str(setup))]
-
-
-def test_ensure_installed_does_not_record_latest_release_when_installer_fails(tmp_path):
-    old_exe = tmp_path / "old" / "RenderDocMCP.exe"
-    old_exe.parent.mkdir()
-    old_exe.write_bytes(b"old")
-    cfg = AppConfig.default()
-    cfg.mcp.install_dir = str(tmp_path / "mcp")
-    cfg.mcp.executable_path = str(old_exe)
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-0.9.0.exe"
-    cfg.mcp.asset_digest = "sha256:old"
-    cfg.mcp.release_tag = "v0.9.0"
-    cfg.mcp.installer_path = str(tmp_path / "old-setup.exe")
-    release = {
-        "tag_name": "v1.0.0",
-        "assets": [
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-                "digest": "sha256:new",
-            }
-        ],
-    }
-
-    def downloader(url, target):
-        target.write_bytes(b"setup")
-
-    def runner(args, check):
-        raise subprocess.CalledProcessError(1, args)
-
-    installer = McpInstaller(
-        cfg,
-        fetch_json=lambda url: release,
-        downloader=downloader,
-        runner=runner,
-        local_installer_dirs=[],
-    )
-
-    with pytest.raises(subprocess.CalledProcessError):
-        installer.ensure_installed()
-
-    assert cfg.mcp.asset_name == "RenderDocMCP-Setup-0.9.0.exe"
-    assert cfg.mcp.asset_digest == "sha256:old"
-    assert cfg.mcp.release_tag == "v0.9.0"
-    assert cfg.mcp.installer_path == str(tmp_path / "old-setup.exe")
-    assert cfg.mcp.executable_path == str(old_exe)
-
-
-def test_ensure_installed_accepts_configured_exe_only_when_release_asset_matches(tmp_path):
     exe = tmp_path / "RenderDocMCP.exe"
+    extension_dir = tmp_path / "renderdoc_extension"
     exe.write_bytes(b"exe")
-    cfg = AppConfig.default()
-    cfg.mcp.executable_path = str(exe)
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
-    cfg.mcp.asset_digest = "sha256:abc123"
-    release = {
-        "assets": [
-            {
-                "name": "RenderDocMCP-Setup-1.0.0.exe",
-                "browser_download_url": "https://example/RenderDocMCP-Setup-1.0.0.exe",
-                "digest": "sha256:abc123",
-            }
-        ]
-    }
-
-    def downloader(url, target):
-        raise AssertionError("current release should not be downloaded")
-
-    def runner(args, check):
-        raise AssertionError("current release should not be installed")
-
-    installer = McpInstaller(
-        cfg,
-        fetch_json=lambda url: release,
-        downloader=downloader,
-        runner=runner,
-        local_installer_dirs=[],
-    )
-
-    assert installer.ensure_installed() == exe
-
-
-def test_runtime_executable_uses_recorded_release_install_without_fetching_latest(tmp_path):
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg = AppConfig.default()
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir.mkdir()
+    (extension_dir / "extension.json").write_text("{}", encoding="utf-8")
     cfg.mcp.executable_path = str(exe)
 
-    installer = McpInstaller(
-        cfg,
-        fetch_json=lambda url: (_ for _ in ()).throw(AssertionError("runtime path must not query GitHub")),
-        downloader=lambda url, target: (_ for _ in ()).throw(AssertionError("runtime path must not download")),
-        runner=lambda args, check: (_ for _ in ()).throw(AssertionError("runtime path must not run installer")),
-    )
+    found = McpInstaller(cfg).discover_extension()
 
-    assert installer.runtime_executable() == exe
+    assert found == extension_dir
+    assert cfg.mcp.extension_dir == str(extension_dir)
 
 
-def test_runtime_executable_accepts_existing_exe_without_release_setup_record(tmp_path):
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg = AppConfig.default()
-    cfg.mcp.executable_path = str(exe)
-
-    installer = McpInstaller(
-        cfg,
-        fetch_json=lambda url: (_ for _ in ()).throw(AssertionError("runtime path must not query GitHub")),
-        downloader=lambda url, target: (_ for _ in ()).throw(AssertionError("runtime path must not download")),
-        runner=lambda args, check: (_ for _ in ()).throw(AssertionError("runtime path must not run installer")),
-    )
-
-    assert installer.runtime_executable() == exe
+def _write_source_tree(root: Path) -> Path:
+    (root / "renderdoc_extension").mkdir(parents=True)
+    (root / "renderdoc_extension" / "extension.json").write_text('{"name":"test"}', encoding="utf-8")
+    (root / "renderdoc_extension" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "mcp_server").mkdir()
+    (root / "mcp_server" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "mcp_server" / "server.py").write_text("def main():\n    pass\n", encoding="utf-8")
+    (root / "mcp_server" / "__pycache__").mkdir()
+    (root / "mcp_server" / "__pycache__" / "server.pyc").write_bytes(b"pyc")
+    (root / "pyproject.toml").write_text('[project]\nname = "renderdoc-mcp"\nversion = "9.8.7"\n', encoding="utf-8")
+    return root

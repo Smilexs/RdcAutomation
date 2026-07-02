@@ -285,9 +285,10 @@ def test_attach_does_not_use_renderdoc_mcp(monkeypatch, tmp_path):
 
 def test_runtime_ready_does_not_download_or_install_mcp(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
-    cfg.mcp.executable_path = str(tmp_path / "RenderDocMCP.exe")
-    Path(cfg.mcp.executable_path).write_bytes(b"exe")
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
+    (extension_dir / "extension.json").write_text("{}", encoding="utf-8")
+    cfg.mcp.extension_dir = str(extension_dir)
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -301,8 +302,8 @@ def test_runtime_ready_does_not_download_or_install_mcp(monkeypatch, tmp_path):
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return Path(self.config.mcp.executable_path)
+        def runtime_extension_dir(self):
+            return Path(self.config.mcp.extension_dir)
 
         def ensure_installed(self):
             raise AssertionError("non-setup commands must not run MCP installer")
@@ -324,14 +325,13 @@ def test_runtime_ready_does_not_download_or_install_mcp(monkeypatch, tmp_path):
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: None)
 
     assert _mcp_client_for_test(monkeypatch, cfg).executable_path is None
-    assert Path(cfg.mcp.executable_path) == Path(tmp_path / "RenderDocMCP.exe")
+    assert Path(cfg.mcp.extension_dir) == extension_dir
 
 
 def test_mcp_client_uses_qrenderdoc_bridge_without_starting_runtime_executable(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
     constructed = []
 
     class FakeRenderDocInstaller:
@@ -346,8 +346,8 @@ def test_mcp_client_uses_qrenderdoc_bridge_without_starting_runtime_executable(m
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     class FakeMcpClient:
         def __init__(self, executable_path=None, **kwargs):
@@ -368,14 +368,13 @@ def test_mcp_client_uses_qrenderdoc_bridge_without_starting_runtime_executable(m
     _mcp_client_for_test(monkeypatch, cfg)
 
     assert constructed == [None]
-    assert cfg.mcp.executable_path == str(exe)
+    assert cfg.mcp.extension_dir == str(extension_dir)
 
 
 def test_mcp_client_patches_renderdoc_mcp_before_starting_qrenderdoc(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
     calls = []
 
     class FakeRenderDocInstaller:
@@ -391,9 +390,9 @@ def test_mcp_client_patches_renderdoc_mcp_before_starting_qrenderdoc(monkeypatch
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
+        def runtime_extension_dir(self):
             calls.append("mcp")
-            return exe
+            return extension_dir
 
     class FakeMcpClient:
         def __init__(self, executable_path=None, **kwargs):
@@ -408,21 +407,20 @@ def test_mcp_client_patches_renderdoc_mcp_before_starting_qrenderdoc(monkeypatch
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: calls.append(("patch", path)) or False)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: calls.append(("patch", path)) or False)
     monkeypatch.setattr("rdc_auto.cli._stop_standalone_mcp_bridge", lambda executable_path: calls.append(("stop_mcp", executable_path)))
     monkeypatch.setattr("rdc_auto.cli.FileIpcMcpClient", FakeMcpClient)
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: calls.append("qrenderdoc"))
 
     _mcp_client_for_test(monkeypatch, cfg)
 
-    assert calls == ["renderdoc", "mcp", ("patch", exe), ("stop_mcp", exe), "qrenderdoc", "ping"]
+    assert calls == ["renderdoc", "mcp", ("patch", extension_dir), ("stop_mcp", "RenderDocMCP.exe"), "qrenderdoc", "ping"]
 
 
 def test_mcp_client_stops_standalone_bridge_before_capability_check(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "renderdoc-mcp.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
     calls = []
 
     class FakeRenderDocInstaller:
@@ -438,9 +436,9 @@ def test_mcp_client_stops_standalone_bridge_before_capability_check(monkeypatch,
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
+        def runtime_extension_dir(self):
             calls.append("mcp")
-            return exe
+            return extension_dir
 
     class FakeMcpClient:
         def __init__(self, executable_path=None, **kwargs):
@@ -456,7 +454,7 @@ def test_mcp_client_stops_standalone_bridge_before_capability_check(monkeypatch,
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: calls.append(("patch", path)) or False)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: calls.append(("patch", path)) or False)
     monkeypatch.setattr("rdc_auto.cli._stop_standalone_mcp_bridge", lambda executable_path: calls.append(("stop_mcp", executable_path)))
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: calls.append("qrenderdoc"))
     monkeypatch.setattr("rdc_auto.cli.FileIpcMcpClient", FakeMcpClient)
@@ -466,8 +464,8 @@ def test_mcp_client_stops_standalone_bridge_before_capability_check(monkeypatch,
     assert calls == [
         "renderdoc",
         "mcp",
-        ("patch", exe),
-        ("stop_mcp", exe),
+        ("patch", extension_dir),
+        ("stop_mcp", "RenderDocMCP.exe"),
         "qrenderdoc",
         "ping",
         "list_running_targets",
@@ -476,9 +474,8 @@ def test_mcp_client_stops_standalone_bridge_before_capability_check(monkeypatch,
 
 def test_mcp_client_requires_renderdoc_restart_after_runtime_patch(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -492,12 +489,12 @@ def test_mcp_client_requires_renderdoc_restart_after_runtime_patch(monkeypatch, 
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: True)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: True)
     monkeypatch.setattr("rdc_auto.cli._process_is_running", lambda image_name: image_name == "qrenderdoc.exe")
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: (_ for _ in ()).throw(AssertionError("qrenderdoc must be restarted first")))
 
@@ -509,9 +506,8 @@ def test_mcp_client_requires_renderdoc_restart_after_runtime_patch(monkeypatch, 
 
 def test_mcp_client_keeps_requiring_restart_until_qrenderdoc_is_closed(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
     cfg.mcp.extension_patch_restart_required = True
 
     class FakeRenderDocInstaller:
@@ -526,12 +522,12 @@ def test_mcp_client_keeps_requiring_restart_until_qrenderdoc_is_closed(monkeypat
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: False)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: False)
     monkeypatch.setattr("rdc_auto.cli._process_is_running", lambda image_name: image_name == "qrenderdoc.exe")
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: (_ for _ in ()).throw(AssertionError("qrenderdoc must be restarted first")))
 
@@ -541,9 +537,8 @@ def test_mcp_client_keeps_requiring_restart_until_qrenderdoc_is_closed(monkeypat
 
 def test_mcp_client_clears_restart_requirement_after_qrenderdoc_is_closed(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
     cfg.mcp.extension_patch_restart_required = True
 
     class FakeRenderDocInstaller:
@@ -558,8 +553,8 @@ def test_mcp_client_clears_restart_requirement_after_qrenderdoc_is_closed(monkey
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     class FakeMcpClient:
         def __init__(self, executable_path=None, **kwargs):
@@ -573,7 +568,7 @@ def test_mcp_client_clears_restart_requirement_after_qrenderdoc_is_closed(monkey
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: False)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: False)
     monkeypatch.setattr("rdc_auto.cli._process_is_running", lambda image_name: False)
     monkeypatch.setattr("rdc_auto.cli._stop_standalone_mcp_bridge", lambda executable_path: None)
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: None)
@@ -586,9 +581,8 @@ def test_mcp_client_clears_restart_requirement_after_qrenderdoc_is_closed(monkey
 
 def test_mcp_client_reports_restart_when_loaded_extension_lacks_capture_connect(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
-    cfg.mcp.asset_name = "RenderDocMCP-Setup-1.0.0.exe"
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -602,8 +596,8 @@ def test_mcp_client_reports_restart_when_loaded_extension_lacks_capture_connect(
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     class OldExtensionMcpClient:
         def __init__(self, executable_path=None, **kwargs):
@@ -617,7 +611,7 @@ def test_mcp_client_reports_restart_when_loaded_extension_lacks_capture_connect(
 
     monkeypatch.setattr("rdc_auto.cli.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.cli.McpInstaller", FakeMcpInstaller)
-    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension", lambda path: False)
+    monkeypatch.setattr("rdc_auto.cli.patch_renderdoc_mcp_extension_dir", lambda path: False)
     monkeypatch.setattr("rdc_auto.cli._stop_standalone_mcp_bridge", lambda executable_path: None)
     monkeypatch.setattr("rdc_auto.cli._start_qrenderdoc", lambda config: None)
     monkeypatch.setattr("rdc_auto.cli.FileIpcMcpClient", OldExtensionMcpClient)

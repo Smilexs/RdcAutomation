@@ -873,9 +873,9 @@
                     <p class="warning-text active" id="renderdocPathWarning">qrenderdoc.exe 路径未设置。检测环境时会先查找 C:\Program Files\RenderDoc\qrenderdoc.exe。</p>
                   </div>
                   <div class="form-row full">
-                    <label for="mcpPath">RenderDocMCP 路径</label>
+                    <label for="mcpPath">RenderDocMCP 扩展路径</label>
                     <input id="mcpPath" value="" />
-                    <p class="warning-text active" id="mcpPathWarning">RenderDocMCP 路径未设置。检测环境时会先查找 %LOCALAPPDATA%\Programs\RenderDocMCP\RenderDocMCP.exe。</p>
+                    <p class="warning-text active" id="mcpPathWarning">RenderDocMCP 扩展未设置。安装 MCP 会从内嵌源码写入 qrenderdoc 扩展目录。</p>
                   </div>
                 </div>
                 <div class="toolbar">
@@ -1433,10 +1433,10 @@
         return { title: "RenderDoc 安装完成", body: "RenderDoc 路径已检查并同步到配置。" };
       }
       if (frontendAction === "install-mcp") {
-        return { title: "MCP 安装完成", body: "RenderDocMCP 路径已检查并同步到配置。" };
+        return { title: "MCP 安装完成", body: "RenderDocMCP 扩展已安装并同步到配置。" };
       }
       if (frontendAction === "auto-install-tools") {
-        return { title: "自动安装完成", body: "RenderDoc 和 RenderDocMCP 路径已同步到配置。" };
+        return { title: "自动安装完成", body: "RenderDoc 路径和 RenderDocMCP 扩展已同步到配置。" };
       }
       return { title: "Action complete", body: `${backendAction} completed.` };
     }
@@ -1512,7 +1512,7 @@
       showConfirmModal({
         action: "auto-install-tools",
         title: "未找到 RenderDoc 和 RenderDocMCP",
-        body: "当前配置和默认路径都没有找到 qrenderdoc.exe 与 RenderDocMCP.exe。是否自动安装 RenderDoc 和 MCP？",
+        body: "当前配置没有找到 qrenderdoc.exe 或 RenderDocMCP 扩展。是否自动安装 RenderDoc 和 MCP？",
         confirmText: "确认自动安装",
         confirmVariant: "teal",
       });
@@ -1640,7 +1640,7 @@
         const path = ($("#mcpPath")?.value || "").trim();
         let message = state.mcpInvalidReason || "";
         if (!path) {
-          message = "RenderDocMCP 路径未设置。检测环境时会先查找 %LOCALAPPDATA%\\Programs\\RenderDocMCP\\RenderDocMCP.exe。";
+          message = "RenderDocMCP 扩展未设置。安装 MCP 会从内嵌源码写入 qrenderdoc 扩展目录。";
         }
         mcpWarning.textContent = message;
         mcpWarning.classList.toggle("active", Boolean(message));
@@ -2125,7 +2125,7 @@
             state.mcpRunning = true;
             state.mcpExtensionLoaded = true;
             updateStatus();
-            toast("MCP 安装/修复完成", "真实版本会下载并安装 RenderDocMCP release。");
+            toast("MCP 安装/修复完成", "真实版本会从内嵌源码安装 RenderDocMCP 扩展。");
             log(`mcp install complete: ${state.mcpVersion}`);
           });
           break;
@@ -2164,7 +2164,7 @@
             state.renderdocInvalidReason = "";
             state.mcpInvalidReason = "";
             setInputValue("renderdocPath", "C:\\Program Files\\RenderDoc\\qrenderdoc.exe");
-            setInputValue("mcpPath", "%LOCALAPPDATA%\\Programs\\RenderDocMCP\\RenderDocMCP.exe");
+            setInputValue("mcpPath", "%APPDATA%\\qrenderdoc\\extensions\\renderdoc_mcp_bridge");
             updateStatus();
             toast("自动安装完成", "已模拟安装 RenderDoc 和 RenderDocMCP。");
             log("auto tool install complete");

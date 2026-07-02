@@ -137,11 +137,12 @@ def test_restart_mcp_can_force_release_active_capture_session(monkeypatch):
     assert terminated == ["RenderDocMCP.exe"]
 
 
-def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_path):
+def test_check_environment_discovers_configured_mcp_extension(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
     cfg = AppConfig.default()
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
+    (extension_dir / "extension.json").write_text("{}", encoding="utf-8")
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -154,11 +155,11 @@ def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_
         def __init__(self, config):
             self.config = config
 
-        def discover_executable(self, allow_configured=True):
+        def discover_extension(self, allow_configured=True):
             assert allow_configured is True
-            return exe
+            return extension_dir
 
-        def runtime_executable(self):
+        def runtime_extension_dir(self):
             raise AssertionError("check_environment must not require setup metadata")
 
     monkeypatch.setattr("rdc_auto.operations.RenderDocInstaller", FakeRenderDocInstaller)
@@ -168,9 +169,9 @@ def test_check_environment_discovers_configured_mcp_executable(monkeypatch, tmp_
     result = check_environment(OperationContext(config=cfg))
 
     assert result["mcp_installed"] is True
-    assert result["mcp_executable_path"] == str(exe)
-    assert cfg.mcp.executable_path == str(exe)
-    assert load_config().mcp.executable_path == str(exe)
+    assert result["mcp_extension_dir"] == str(extension_dir)
+    assert cfg.mcp.extension_dir == str(extension_dir)
+    assert load_config().mcp.extension_dir == str(extension_dir)
 
 
 def test_export_assets_persists_source_rdc_path(monkeypatch, tmp_path):
@@ -212,9 +213,9 @@ def test_check_environment_rejects_invalid_configured_renderdoc_path(monkeypatch
         check_environment(OperationContext(config=cfg))
 
 
-def test_check_environment_rejects_invalid_configured_mcp_path(monkeypatch, tmp_path):
+def test_check_environment_rejects_invalid_configured_mcp_extension(monkeypatch, tmp_path):
     cfg = AppConfig.default()
-    cfg.mcp.executable_path = str(tmp_path / "missing" / "RenderDocMCP.exe")
+    cfg.mcp.extension_dir = str(tmp_path / "missing" / "renderdoc_mcp_bridge")
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -225,7 +226,7 @@ def test_check_environment_rejects_invalid_configured_mcp_path(monkeypatch, tmp_
 
     monkeypatch.setattr("rdc_auto.operations.RenderDocInstaller", FakeRenderDocInstaller)
 
-    with pytest.raises(DependencyMissing, match="Configured RenderDocMCP executable was not found"):
+    with pytest.raises(DependencyMissing, match="Configured RenderDocMCP extension was not found"):
         check_environment(OperationContext(config=cfg))
 
 
@@ -233,8 +234,8 @@ def test_setup_renderdoc_and_mcp_does_not_prompt_for_mumu(monkeypatch, tmp_path)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
     cfg = AppConfig.default()
     calls = []
-    mcp_exe = tmp_path / "RenderDocMCP.exe"
-    mcp_exe.write_bytes(b"exe")
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
 
     monkeypatch.setattr("rdc_auto.operations.setup_renderdoc", lambda ctx, save=True: calls.append(("renderdoc", save)))
 
@@ -244,7 +245,7 @@ def test_setup_renderdoc_and_mcp_does_not_prompt_for_mumu(monkeypatch, tmp_path)
 
         def ensure_installed(self):
             calls.append(("mcp", None))
-            return mcp_exe
+            return extension_dir
 
     monkeypatch.setattr("rdc_auto.operations.McpInstaller", FakeMcpInstaller)
     monkeypatch.setattr("rdc_auto.operations.ensure_mumu_root", lambda config: (_ for _ in ()).throw(AssertionError("auto tool install must not prompt for MuMu12")))
@@ -252,8 +253,8 @@ def test_setup_renderdoc_and_mcp_does_not_prompt_for_mumu(monkeypatch, tmp_path)
     setup_renderdoc_and_mcp(OperationContext(config=cfg))
 
     assert calls == [("renderdoc", False), ("mcp", None)]
-    assert cfg.mcp.executable_path == str(mcp_exe)
-    assert load_config().mcp.executable_path == str(mcp_exe)
+    assert cfg.mcp.extension_dir == str(extension_dir)
+    assert load_config().mcp.extension_dir == str(extension_dir)
 
 
 def test_setup_renderdoc_with_configured_path_only_checks_that_path(monkeypatch, tmp_path):
@@ -286,8 +287,8 @@ def test_start_mcp_persists_restart_required_when_patch_requires_closed_renderdo
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
     cfg = AppConfig.default()
     save_config(cfg)
-    exe = tmp_path / "RenderDocMCP.exe"
-    exe.write_bytes(b"exe")
+    extension_dir = tmp_path / "renderdoc_mcp_bridge"
+    extension_dir.mkdir()
 
     class FakeRenderDocInstaller:
         def __init__(self, config):
@@ -301,17 +302,17 @@ def test_start_mcp_persists_restart_required_when_patch_requires_closed_renderdo
         def __init__(self, config):
             self.config = config
 
-        def runtime_executable(self):
-            return exe
+        def runtime_extension_dir(self):
+            return extension_dir
 
     monkeypatch.setattr("rdc_auto.operations.RenderDocInstaller", FakeRenderDocInstaller)
     monkeypatch.setattr("rdc_auto.operations.McpInstaller", FakeMcpInstaller)
     monkeypatch.setattr("rdc_auto.operations.is_process_running", lambda image_name: image_name == "qrenderdoc.exe")
-    monkeypatch.setattr("rdc_auto.operations.patch_renderdoc_mcp_extension", lambda path: True)
+    monkeypatch.setattr("rdc_auto.operations.patch_renderdoc_mcp_extension_dir", lambda path: True)
 
     with pytest.raises(UserActionRequired, match="Close all RenderDoc windows"):
         start_mcp(OperationContext(config=None))
 
     saved = load_config()
-    assert saved.mcp.executable_path == str(exe)
+    assert saved.mcp.extension_dir == str(extension_dir)
     assert saved.mcp.extension_patch_restart_required is True

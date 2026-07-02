@@ -56,7 +56,7 @@ class GuiBridge:
             payload = payload or {}
             cfg = load_config()
             cfg.renderdoc.qrenderdoc_path = str(payload.get("renderdoc_path", "")).strip()
-            cfg.mcp.executable_path = str(payload.get("executable_path", payload.get("mcp_path", ""))).strip()
+            _assign_mcp_path(cfg, str(payload.get("executable_path", payload.get("mcp_path", ""))).strip())
             mumu_root = str(payload.get("mumu_root", "")).strip()
             if mumu_root:
                 try:
@@ -76,7 +76,7 @@ class GuiBridge:
         try:
             payload = payload or {}
             cfg = load_config()
-            cfg.mcp.executable_path = str(payload.get("executable_path", payload.get("mcp_path", ""))).strip()
+            _assign_mcp_path(cfg, str(payload.get("executable_path", payload.get("mcp_path", ""))).strip())
             save_config(cfg)
             return self._ok(build_status_snapshot(cfg), logs=["MCP config saved"])
         except Exception as exc:
@@ -376,6 +376,16 @@ def _payload_bool(value: Any) -> bool:
         if normalized in {"false", "0", "no", "n", "off", ""}:
             return False
     return False
+
+
+def _assign_mcp_path(cfg, raw_path: str) -> None:
+    path = Path(raw_path) if raw_path else None
+    if path is not None and path.is_dir():
+        cfg.mcp.extension_dir = str(path)
+        cfg.mcp.executable_path = ""
+        return
+    cfg.mcp.executable_path = raw_path
+    cfg.mcp.extension_dir = ""
 
 
 def _export_result(params: dict, emit: EmitProgress) -> dict[str, Any]:

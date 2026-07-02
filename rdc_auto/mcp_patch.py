@@ -20,6 +20,13 @@ def patch_renderdoc_mcp_extension(executable_path: str | Path) -> bool:
     return changed
 
 
+def patch_renderdoc_mcp_extension_dir(extension_dir: str | Path) -> bool:
+    extension_dir = Path(extension_dir)
+    if not extension_dir.is_dir():
+        return False
+    return _patch_extension_dir(extension_dir)
+
+
 def _candidate_extension_dirs(executable_path: str | Path) -> list[Path]:
     candidates = [
         Path(executable_path).parent / "renderdoc_extension",

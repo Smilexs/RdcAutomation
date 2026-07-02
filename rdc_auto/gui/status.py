@@ -101,7 +101,7 @@ def build_status_snapshot(
             "process_running": mcp_runtime.process_running if mcp_runtime is not None else mcp_process_running,
             "runtime_detail": mcp_runtime_detail,
             "version": _mcp_display_version(cfg),
-            "path": cfg.mcp.executable_path,
+            "path": cfg.mcp.extension_dir or cfg.mcp.executable_path,
             "invalid_reason": mcp_invalid_reason,
             "extension_loaded": mcp_running and not cfg.mcp.extension_patch_restart_required,
         },
@@ -140,9 +140,16 @@ def _renderdoc_status(cfg: AppConfig) -> tuple[bool, str]:
 
 
 def _mcp_config_status(cfg: AppConfig) -> tuple[bool, str]:
+    raw_extension_dir = cfg.mcp.extension_dir.strip()
+    if raw_extension_dir:
+        path = Path(raw_extension_dir)
+        if not (path / "extension.json").is_file():
+            return False, f"RenderDocMCP extension was not found: {path}"
+        return True, ""
+
     raw_path = cfg.mcp.executable_path.strip()
     if not raw_path:
-        return False, "RenderDocMCP path is not configured"
+        return False, "RenderDocMCP extension is not configured"
     path = Path(raw_path)
     if path.name.lower() not in {"renderdocmcp.exe", "renderdoc-mcp.exe"}:
         return False, f"RenderDocMCP path must point to RenderDocMCP.exe: {path}"
@@ -169,6 +176,8 @@ def _mcp_display_version(cfg: AppConfig) -> str:
         if match:
             return f"v{match.group(1)}"
         return cfg.mcp.asset_name
+    if cfg.mcp.extension_dir:
+        return "embedded"
     if cfg.mcp.executable_path:
         return "版本未记录"
     return "未配置"

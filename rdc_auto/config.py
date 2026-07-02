@@ -32,6 +32,8 @@ class McpConfig:
     installer_path: str = ""
     install_dir: str = ""
     executable_path: str = ""
+    source_path: str = ""
+    extension_dir: str = ""
     mode: str = "managed"
     extension_patch_restart_required: bool = False
 

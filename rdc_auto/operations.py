@@ -15,7 +15,7 @@ from .errors import DependencyMissing, McpCapabilityMissing, RdcAutoError, UserA
 from .export_assets import ExportService
 from .mcp_client import FileIpcMcpClient
 from .mcp_installer import McpInstaller
-from .mcp_patch import patch_renderdoc_mcp_extension
+from .mcp_patch import patch_renderdoc_mcp_extension_dir
 from .paths import canonical_mumu_root, validate_mumu_root
 from .processes import count_processes, executable_name, is_process_running, terminate_process_tree
 from .prompts import prompt_path
@@ -51,8 +51,8 @@ def setup_environment(ctx: OperationContext) -> None:
 
     ctx.emit("checking RenderDocMCP", 75)
     mcp = McpInstaller(cfg)
-    mcp_exe = mcp.ensure_installed()
-    cfg.mcp.executable_path = str(mcp_exe)
+    mcp_extension_dir = mcp.ensure_installed()
+    cfg.mcp.extension_dir = str(mcp_extension_dir)
     ctx.emit("setup complete", 100)
     ctx.save()
 
@@ -62,8 +62,8 @@ def setup_renderdoc_and_mcp(ctx: OperationContext) -> None:
     setup_renderdoc(ctx, save=False)
 
     ctx.emit("checking RenderDocMCP", 60)
-    mcp_exe = McpInstaller(cfg).ensure_installed()
-    cfg.mcp.executable_path = str(mcp_exe)
+    mcp_extension_dir = McpInstaller(cfg).ensure_installed()
+    cfg.mcp.extension_dir = str(mcp_extension_dir)
     ctx.emit("RenderDoc and RenderDocMCP setup complete", 100)
     ctx.save()
 
@@ -88,23 +88,23 @@ def setup_renderdoc(ctx: OperationContext, save: bool = True) -> None:
 def setup_mcp(ctx: OperationContext) -> Path:
     cfg = ctx.cfg()
     ctx.emit("checking RenderDocMCP", 10)
-    mcp_exe = McpInstaller(cfg).ensure_installed()
-    cfg.mcp.executable_path = str(mcp_exe)
+    mcp_extension_dir = McpInstaller(cfg).ensure_installed()
+    cfg.mcp.extension_dir = str(mcp_extension_dir)
     ctx.emit("RenderDocMCP setup complete", 100)
     ctx.save()
-    return mcp_exe
+    return mcp_extension_dir
 
 
 def check_environment(ctx: OperationContext) -> dict:
     cfg = ctx.cfg()
     before = asdict(cfg)
     renderdoc_installed = RenderDocInstaller(cfg).ensure_installed()
-    mcp_executable = ""
+    mcp_extension = ""
     mcp_installed = False
-    mcp_exe = McpInstaller(cfg).discover_executable(allow_configured=True)
-    if mcp_exe:
-        cfg.mcp.executable_path = str(mcp_exe)
-        mcp_executable = str(mcp_exe)
+    mcp_extension_dir = McpInstaller(cfg).discover_extension(allow_configured=True)
+    if mcp_extension_dir:
+        cfg.mcp.extension_dir = str(mcp_extension_dir)
+        mcp_extension = str(mcp_extension_dir)
         mcp_installed = True
 
     mumu_executable = ""
@@ -123,7 +123,8 @@ def check_environment(ctx: OperationContext) -> dict:
         "renderdoc_installed": renderdoc_installed,
         "renderdoc_path": cfg.renderdoc.qrenderdoc_path,
         "mcp_installed": mcp_installed,
-        "mcp_executable_path": mcp_executable,
+        "mcp_executable_path": cfg.mcp.executable_path,
+        "mcp_extension_dir": mcp_extension,
         "mumu_configured": mumu_configured,
         "mumu_executable_path": mumu_executable,
         "qrenderdoc_running": is_process_running("qrenderdoc.exe"),
@@ -200,8 +201,8 @@ def restart_mcp(ctx: OperationContext, force_release_session: bool = False) -> F
 def mcp_client(cfg: AppConfig, require_capture_connect: bool = False) -> FileIpcMcpClient:
     if not RenderDocInstaller(cfg).ensure_installed():
         raise DependencyMissing("RenderDoc v1.44 was not found. Run rdc-auto setup before this command.")
-    mcp_exe = McpInstaller(cfg).runtime_executable()
-    cfg.mcp.executable_path = str(mcp_exe)
+    mcp_extension_dir = McpInstaller(cfg).runtime_extension_dir()
+    cfg.mcp.extension_dir = str(mcp_extension_dir)
     qrenderdoc_running = is_process_running("qrenderdoc.exe")
     if cfg.mcp.extension_patch_restart_required:
         if qrenderdoc_running:
@@ -210,7 +211,7 @@ def mcp_client(cfg: AppConfig, require_capture_connect: bool = False) -> FileIpc
             )
         cfg.mcp.extension_patch_restart_required = False
 
-    patch_applied = patch_renderdoc_mcp_extension(mcp_exe)
+    patch_applied = patch_renderdoc_mcp_extension_dir(mcp_extension_dir)
     if patch_applied:
         cfg.mcp.extension_patch_restart_required = qrenderdoc_running
         if qrenderdoc_running:
@@ -218,7 +219,7 @@ def mcp_client(cfg: AppConfig, require_capture_connect: bool = False) -> FileIpc
                 "RenderDocMCP was updated to auto-connect MuMuVMHeadless. Close all RenderDoc windows, then rerun the command."
             )
 
-    stop_standalone_mcp_bridge(mcp_exe)
+    stop_standalone_mcp_bridge(cfg.mcp.executable_path or "RenderDocMCP.exe")
     start_qrenderdoc(cfg)
     client = FileIpcMcpClient(
         executable_path=None,

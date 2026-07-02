@@ -28,7 +28,7 @@ Use this Skill to drive the `rdc-auto` CLI. Keep the Skill thin: ask for missing
 
 - RenderDoc version is v1.44.
 - RenderDoc installer is downloaded from `https://renderdoc.org/builds` when RenderDoc is missing.
-- RenderDocMCP is installed from the latest GitHub release setup executable at `https://api.github.com/repos/Smilexs/RenderDocMCP/releases/latest`.
+- RenderDocMCP is installed from the embedded `renderdoc_mcp` source tree; setup copies the RenderDoc extension into qrenderdoc's extension directory and configures Always Load.
 - The only supported emulator in the first release is MuMu12.
 - MuMu12 root is the directory that directly contains `nx_main`; the executable path is `<MuMu12Root>\nx_main\MuMuNxMain.exe`.
 - MuMu12 must use Vulkan.
